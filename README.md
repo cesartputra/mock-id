@@ -1,109 +1,145 @@
-# mock-id — iDeb Verify demo lokal
+# mock-id — verifikasi identitas lokal
 
-Prototipe interaktif berbahasa Indonesia berdasarkan percakapan [Rancang Alur Verifikasi Otomatis](https://chatgpt.com/share/6acba866-18b0-83ec-9287-0fb9eabb5b18), ditambah tahap foto diri sambil memegang KTP.
+Proyek runnable untuk demo OCR KTP, pencocokan wajah 1:1, tantangan liveness, anti-spoofing, klasifikasi manipulasi gambar, serta KYC dengan foto pemohon memegang KTP. **Pemrosesan foto memakai model open source sungguhan di CPU. Hanya adapter Dukcapil yang mock.**
 
-## Menjalankan
+Backend FastAPI, frontend HTML/CSS/JavaScript, penyimpanan SQLite. Dashboard mulai kosong; tidak ada skenario hasil atau skor preset. Hasil yang belum dikerjakan tampil kosong, dan gangguan model tampil sebagai gangguan teknis.
 
-Butuh Node.js 18 atau lebih baru. Tidak perlu `npm install`, API key, Python, atau unduhan model.
+## Menjalankan pertama kali
 
-```sh
+Prasyarat: **Python 3.11 atau 3.12**, Node.js 18+, Git, dan internet untuk setup. Gunakan browser modern yang mendukung kamera di localhost. Python 3.14 belum didukung oleh kombinasi wheel inference yang dipakai.
+
+```bash
 git clone https://github.com/cesartputra/mock-id.git
 cd mock-id
+npm run setup
 npm start
 ```
 
-Buka **http://127.0.0.1:4173** di browser. Tekan Ctrl+C di terminal untuk berhenti. Di macOS, Anda juga dapat menjalankan `Jalankan Demo.command`. Jika terminal menyatakan Node tidak ditemukan, pasang Node.js terlebih dahulu dari sumber resmi.
+Buka **http://127.0.0.1:4173**. Setup membuat `.venv`, memasang library Python, mengunduh sekitar **206 MiB bobot model**, memverifikasi SHA-256, dan menjalankan smoke test OCR. Dependensi Python memerlukan ruang tambahan. Setup bisa dijalankan ulang; bobot dengan checksum yang sama tidak diunduh lagi. Pemrosesan selanjutnya memakai bobot lokal, tanpa mengirim foto ke layanan model.
 
-Untuk mengganti port:
+Jika Python tidak terdeteksi otomatis:
 
-```sh
-PORT=4180 npm start
+```bash
+MOCK_ID_PYTHON=python3.12 npm run setup
 ```
 
-Server hanya mendengarkan pada `127.0.0.1`, sehingga tidak dibuka ke jaringan LAN. Setelah server aktif, tidak ada koneksi internet yang diperlukan.
+Windows PowerShell:
 
-## Memperbarui aplikasi
+```powershell
+$env:MOCK_ID_PYTHON = "C:\Path\To\Python312\python.exe"
+npm run setup
+npm start
+```
 
-Jika repo sudah di-clone, jalankan dari folder `mock-id`:
+Pada macOS, setelah setup Anda juga bisa membuka `Jalankan Demo.command`. Hentikan server dengan Ctrl+C. Jika port dipakai aplikasi lain, gunakan `PORT=4174 npm start` (PowerShell: `$env:PORT="4174"`).
 
-```sh
+## Mengambil update
+
+Hentikan server yang berjalan, lalu dari folder hasil clone:
+
+```bash
 git pull --ff-only
+npm run setup
 npm start
 ```
 
-Hentikan server lama dengan Ctrl+C sebelum menjalankan server lagi, lalu refresh browser. Tidak perlu `npm install` karena aplikasi tidak memiliki dependensi eksternal. Pembaruan source tidak menghapus data demo di browser; gunakan tombol reset dalam aplikasi untuk memuat ulang data contoh bila diperlukan.
+SQLite lokal dan bobot model berada di `.gitignore`; pull tidak menimpa data tersebut. Jika Anda punya perubahan kode lokal, selesaikan commit/stash sebelum pull. Repo berisi kode, manifest download, dan fixture pengujian publik. Bobot besar, foto pemohon, `.venv`, serta database lokal tidak diunggah ke GitHub.
 
-`git pull --ff-only` berhenti jika perubahan lokal atau riwayat branch bertentangan, sehingga tidak membuat merge otomatis. Simpan perubahan lokal Anda sebelum melakukan update jika Git melaporkan konflik.
+Jika pindah versi Python, buat ulang `.venv` dengan Python 3.11/3.12 sebelum setup. Versi 2 menggantikan frontend simulasi versi 1; data `localStorage` lama tidak diimpor.
 
-## Yang dapat dicoba
-
-1. Klik **Verifikasi baru** atau **Coba alur pemohon**.
-2. Pilih salah satu skenario di panel samping. Pilihan bisa diubah sampai pemrosesan dimulai.
-3. Gunakan KTP contoh, unggah gambar, atau buka kamera. Centang pemahaman demo.
-4. Tinjau dan koreksi keluaran OCR contoh: NIK 16 digit, nama, tanggal lahir, dan alamat.
-5. Selesaikan tiga tantangan liveness dengan tombol simulasi.
-6. Ambil/unggah **foto diri sambil memegang KTP**, atau pilih ilustrasi contoh. Pastikan wajah dan KTP tidak saling menutupi.
-7. Jalankan pipeline mock dan lihat hasil. Hasil dapat diunduh sebagai JSON.
-8. Untuk hasil manual, buka antrean, tentukan jadwal dalam WIB, dan catat alasan keputusan petugas.
-9. Buka **Audit aktivitas** untuk riwayat. Antrean dan audit dapat diekspor ke CSV. Dialog ekspor menyediakan isi file untuk disalin jika browser membatasi unduhan.
-
-Kamera hanya diminta ketika pengguna menekan tombol kamera. Pengambilan foto menggunakan kamera perangkat melalui `getUserMedia` dan bekerja pada localhost/browser yang mendukung. Jika izin ditolak atau kamera tidak tersedia, gunakan gambar contoh atau unggahan. Tantangan liveness tetap simulasi meskipun Anda mengambil foto nyata.
-
-## Skenario
-
-| Skenario | Hasil dan tindak lanjut |
-| --- | --- |
-| Lulus otomatis | Semua kontrol mock terpenuhi, lalu tampilkan langkah pengajuan contoh. |
-| Perbaikan capture | Skor kualitas dokumen rendah; ulang capture dengan percobaan terbatas. |
-| Gangguan teknis | Adapter identitas timeout; retry terukur, tanpa masuk antrean manual. |
-| Identitas belum pasti | Face similarity rendah; masuk antrean manual dan reservasi petugas. |
-| Indikasi serangan | Sinyal spoof/deepfake/injection mock; tampilkan tinjauan keamanan. |
-
-Untuk mencoba pemulihan: setelah hasil perbaikan atau gangguan teknis, tekan ulang/retry dan ubah skenario menjadi **Lulus otomatis**. Setiap percobaan dicatat. Ambang face similarity/liveness dan jumlah percobaan dapat diubah melalui **Modul & konfigurasi**. Ambang diterapkan pada saat pemrosesan dan disimpan bersama hasil; perubahan berikutnya tidak mengubah hasil historis.
-
-## Batas demo
-
-- OCR KTP, keterlihatan wajah/KTP dalam foto KYC, pencocokan dokumen, liveness, face matching, deteksi deepfake, injection, dan Dukcapil **semuanya mock**.
-- Gambar unggahan atau hasil kamera hanya menjadi pratinjau. Tidak ada model yang menganalisis gambar; skor berasal dari skenario.
-- Foto memegang KTP mendukung pemeriksaan penguasaan dokumen fisik, tetapi demo ini **belum membuktikan kepemilikan sah, keaslian dokumen, ataupun identitas**.
-- Nama PaddleOCR, YuNet/SFace, MediaPipe, MiniFASNet, dan DeepfakeBench menjelaskan kandidat arsitektur dari referensi GPT. Paket, bobot, dan model tersebut belum dipasang.
-- Belum ada FastAPI, integrasi Dukcapil/OJK, login, penyimpanan server, atau pengajuan iDeb asli.
-- Durasi dan confidence di dashboard bersifat ilustratif, bukan benchmark model atau bukti akurasi.
-- Kontrol sesi 15 menit, nonce sekali pakai, dan batas percobaan hanya berada di JavaScript browser; untuk produksi harus ditegakkan di backend.
-- Audit demo bukan audit yang tahan manipulasi.
-
-## Data lokal
-
-Permohonan fiktif, NIK contoh, konfigurasi, jadwal, keputusan, dan audit disimpan di `localStorage` dengan key `ideb-verify-demo-v1`. Gunakan data fiktif saat mencoba. Data berbeda antar browser/port dan bertahan setelah reload.
-
-Gambar dokumen, selfie, dan foto bersama KTP disimpan sementara dalam memori tab, tidak dimasukkan ke localStorage atau file ekspor. Reload memulai sesi capture baru dan menghapus pratinjau gambar. Kamera dihentikan saat foto diambil atau dialog ditutup.
-
-Gunakan **Modul & konfigurasi → Reset data demo** untuk memuat ulang delapan permohonan awal. Proses reset memiliki dialog konfirmasi. Jadwal disimpan dan ditampilkan dalam zona waktu Asia/Jakarta (WIB).
-
-## Struktur
+## Struktur model, view, controller, services
 
 ```text
-mock-id/
-  package.json
-  server.mjs                 # HTTP statis lokal, Node tanpa dependensi
-  Jalankan Demo.command      # launcher terminal macOS
-  public/
-    index.html
-    style.css                # layout responsif, tanpa font/CDN eksternal
-    app.js                   # capture, rules mock, antrean, audit, ekspor
-  tests/flow.mjs             # pengujian keputusan dan kontrol sesi mock
-  README.md
+app/
+├── main.py                    # FastAPI, lifecycle, middleware, static files
+├── config.py                  # Batas capture, lokasi data, ambang awal
+├── model/
+│   ├── entities.py            # Model sesi capture
+│   ├── repository.py          # Repository SQLite: hasil, audit, konfigurasi
+│   └── weights/               # Bobot lokal, diabaikan Git
+├── view/
+│   └── static/                # index.html, style.css, app.js
+├── controller/
+│   └── verification.py        # Endpoint, validasi request, respons
+└── services/
+    ├── pipeline.py            # Orkestrasi pemeriksaan dan keputusan
+    ├── ocr.py                 # RapidOCR + parser identitas
+    ├── face.py                # YuNet + SFace
+    ├── landmarks.py           # PIPNet + MediaPipe Hand ONNX
+    ├── antispoof.py           # MiniFASNetV2
+    ├── deepfake.py             # ViT Real/Fake
+    ├── imaging.py             # Decode, kualitas, perspektif kartu
+    ├── sessions.py            # TTL, nonce, retry
+    ├── dukcapil.py            # Adapter mock, titik integrasi API resmi
+    ├── assets.py              # Pemeriksaan integritas bobot
+    └── vendor/                # Wrapper upstream ONNX + lisensi
+scripts/                       # Setup dan launcher lintas platform
+tests/                         # Unit, API, dan inference nyata
+data/                          # SQLite lokal, diabaikan Git
+model-manifest.json            # URL/revisi, ukuran dan SHA-256 bobot
+requirements.txt               # Versi library runtime yang dipin
 ```
 
-Pengecekan sintaks:
+View mengirim capture ke controller. Controller memvalidasi payload dan sesi, lalu memanggil services. Pipeline menjalankan model dan menyimpan hasil lewat repository. Tidak ada logika keputusan di frontend.
 
-```sh
+## Alur pemohon
+
+1. Unggah/ambil KTP, setujui pemrosesan lokal, dan jalankan OCR. NIK wajib terbaca sebagai 16 digit; data tidak diisi dengan contoh. Nama, tanggal lahir, dan alamat boleh dikoreksi. NIK tetap mengikuti OCR.
+2. Rekam kamera dengan tiga tantangan dalam urutan acak dari server: pejamkan/buka mata, putar kepala, tersenyum. Tiap tantangan mulai dengan empat frame ekspresi netral. Ikuti petunjuk selama sekitar lima detik per tantangan. Tidak ada pilihan mengunggah foto sebagai pengganti rekaman liveness di UI.
+3. Ambil/unggah foto wajah sambil memegang KTP. Kartu dan tangan perlu terlihat utuh, teks NIK terbaca, tanpa silau, dan wajah cukup besar.
+4. Backend mendeteksi bingkai kartu, melakukan OCR NIK kedua, mencari landmark tangan dekat kartu, mencocokkan wajah KTP↔selfie dan selfie↔KYC, memeriksa perubahan landmark, kontinuitas wajah, PAD, dan risiko manipulasi gambar.
+5. Hasil diarahkan ke kontrol lokal terpenuhi, perbaikan capture, gangguan teknis, pemeriksaan manual, atau tinjauan keamanan. Keputusan manual/jadwal dan audit benar-benar tersimpan di SQLite.
+
+Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memegang kartu yang sama**. Deteksi tangan dekat kartu merupakan pemeriksaan geometris, sehingga belum membuktikan keaslian fisik KTP atau kepemilikan yang sah secara resmi.
+
+## Library dan model
+
+| Pemeriksaan | Implementasi | Sumber |
+|---|---|---|
+| OCR | RapidOCR 3.10 / PaddleOCR ONNX, multilingual recognition | [RapidOCR](https://github.com/RapidAI/RapidOCR) |
+| Wajah | OpenCV YuNet dan SFace; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [SFace](https://huggingface.co/opencv/face_recognition_sface) |
+| Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
+| Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
+| Anti-spoof | MiniFASNetV2 / ONNX Runtime CPU | [Face anti-spoofing](https://github.com/yakhyo/face-anti-spoofing), [Silent Face](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) |
+| Manipulasi | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
+| Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
+
+Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT) dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
+
+SFace memakai ambang cosine awal 0.363. Ambang PAD, classifier deepfake, dan blur dapat diubah di UI; seluruh keputusan menggunakan konfigurasi backend. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
+
+Gerakan dihitung dari landmark aktual: baseline eye aspect ratio ≥0.22 lalu tertutup ≤0.19 dan ≤70% baseline; senyum menambah lebar mulut relatif ≥10% dan ≥0.06; putaran kepala mengubah posisi hidung relatif ≥0.12. Batas ini perlu diuji pada perangkat dan kondisi capture Anda.
+
+## Penyimpanan, sesi, dan API
+
+Foto KTP hanya berada dalam memori sesi. Selfie/KYC/frame hanya berada dalam memori request inference; tidak disimpan ke disk. Sesi TTL 15 menit dibersihkan berkala 30 detik, dengan pengecualian request yang masih diproses. Restart menghapus semua sesi. Browser juga menyimpan pratinjau dalam memori selama halaman terbuka.
+
+Database `data/workspace.sqlite3` menyimpan nama, NIK tersamarkan, hasil/skor, audit, jadwal, dan konfigurasi. NIK lengkap maupun gambar tidak disimpan ke SQLite. Ekspor JSON/CSV merupakan unduhan yang dipilih operator. Lokasi database dapat diubah lewat `MOCK_ID_DATA_DIR`.
+
+Nonce server sekali pakai, maksimal tiga percobaan untuk hasil capture/teknis. Backend memeriksa urutan tantangan, minimal delapan frame per tantangan, timestamp, dan banyaknya frame identik. Pemeriksaan ini belum merupakan attestation kamera; klien yang dimodifikasi masih bisa menyusun payload sendiri.
+
+Server launcher mengikat **127.0.0.1**. Host dan Origin dibatasi, dan mutasi API memerlukan `X-Local-Client: mock-id`. Header ini adalah penghalang request lintas situs, **bukan autentikasi operator**. Telemetry FastAPI dinonaktifkan. Untuk demo lokal satu operator; sebelum dipakai multiuser perlu autentikasi, otorisasi, enkripsi data, kebijakan retensi, dan evaluasi keamanan sesuai lingkungan sebenarnya.
+
+Dokumentasi API: **http://127.0.0.1:4173/docs**. Untuk mencoba endpoint mutasi lewat curl/Python atau Swagger, sertakan header `X-Local-Client: mock-id`. Swagger dapat memasukkannya melalui tombol **Authorize**.
+
+```bash
+curl -H 'X-Local-Client: mock-id' -X POST http://127.0.0.1:4173/api/sessions
+```
+
+Endpoint utama: `/api/health`, `/api/workspace`, `/api/sessions`, `/api/sessions/{id}/document`, `/api/sessions/{id}/identity`, `/api/sessions/{id}/verify`, `/api/sessions/{id}/retry`, `/api/settings`, `/api/records/{id}/review`, `/api/records/{id}/schedule`.
+
+Untuk mengganti Dukcapil mock, implementasikan adapter resmi di `app/services/dukcapil.py` dengan credential dan kontrak API yang disetujui penyedia. Saat ini `identity_verified` selalu **false**, termasuk hasil pass dan persetujuan manual. Aplikasi tidak menyatakan identitas telah diverifikasi oleh Dukcapil.
+
+## Pengujian
+
+```bash
+npm run setup:test
 npm run check
 npm test
 ```
 
-Untuk menjadikannya implementasi nyata, ganti adapter mock dengan backend dan endpoint inference. Validasi identitas/sumber referensi, pengujian PAD/injection, penanganan manual, lisensi bobot/dataset, dan kontrol sesi perlu dirancang serta dievaluasi tersendiri.
+Tes inference memakai model aktual: OCR NIK dari kartu sintetis, matching pada fixture wajah publik, perubahan skor PAD saat blur, classifier deepfake, penolakan tantangan wajah statis, deteksi tangan positif/negatif, serta deteksi bingkai kartu. Tes API mencakup isolasi data, input tidak valid, nonce, expiry, urutan tantangan, replay, retry, konfigurasi, dan keputusan manual. Tes model di-skip jika bobot belum disiapkan; jalankan setup untuk pengujian lengkap.
 
-## Verifikasi demo
+Fixture publik hanya untuk pengujian; bukan data pemohon. Uji positif lengkap menggunakan orang di depan kamera dan KTP fisik masih perlu dilakukan di perangkat Anda. Implementasi ini menjalankan pemeriksaan nyata, tetapi belum dinyatakan sebagai sistem KYC produksi atau PAD tersertifikasi. Image classifier deepfake tidak mendeteksi semua video, virtual camera, atau injection.
 
-Lima hasil skenario, capture KYC wajib, masa berlaku sesi, nonce sekali pakai, retry, batas percobaan, perubahan status manual, dan aturan historis diperiksa melalui test Node. Alur pemohon, unggahan foto referensi, hasil lulus/manual/capture/timeout/serangan, reservasi WIB, keputusan petugas, audit, filter antrean, dan pratinjau CSV juga diperiksa di browser. Pengambilan gambar dari kamera fisik belum diuji; preview contoh dan unggahan dapat dipakai tanpa kamera. Unduhan blob tidak terkonfirmasi pada browser in-app, sehingga tersedia pratinjau dan salin isi file sebagai alternatif.
+Aplikasi adalah proyek demo mandiri; bukan layanan resmi OJK/iDebKu/Dukcapil.

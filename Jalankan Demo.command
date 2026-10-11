@@ -1,5 +1,8 @@
 #!/bin/zsh
 cd -- "$(dirname -- "$0")" || exit 1
-print "Demo iDeb Verify — buka http://127.0.0.1:4173"
-print "Tekan Ctrl+C untuk menghentikan server."
-node server.mjs
+if [[ ! -x .venv/bin/python ]]; then
+  print "Jalankan npm run setup terlebih dahulu (Python 3.11/3.12 diperlukan)."
+  exit 1
+fi
+print "Buka http://127.0.0.1:4173 — Ctrl+C untuk menghentikan server."
+npm start

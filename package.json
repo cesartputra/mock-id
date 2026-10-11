@@ -1,12 +1,14 @@
 {
-  "name": "ideb-verify-demo",
-  "version": "1.0.0",
+  "name": "mock-id",
+  "version": "2.0.0",
   "private": true,
-  "description": "Demo lokal alur verifikasi identitas iDebKu",
+  "description": "Local open source OCR, biometric verification and KYC with FastAPI MVC",
   "scripts": {
-    "start": "node server.mjs",
-    "check": "node --check public/app.js && node --check server.mjs",
-    "test": "node tests/flow.mjs"
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node scripts/test.mjs",
+    "setup:test": "node scripts/install-test.mjs"
   },
   "engines": {
     "node": ">=18"

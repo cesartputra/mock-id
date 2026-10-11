@@ -1,0 +1,21 @@
+# Sistem operasi
+.DS_Store
+.AppleDouble
+Thumbs.db
+
+# Dependensi dan log lokal
+node_modules/
+*.log
+npm-debug.log*
+
+# Konfigurasi lokal dan kredensial
+.env
+.env.*
+!.env.example
+
+# Berkas editor
+.vscode/
+.idea/
+
+# Hasil pengujian lokal
+coverage/

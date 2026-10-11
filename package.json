@@ -1,0 +1,14 @@
+{
+  "name": "ideb-verify-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo lokal alur verifikasi identitas iDebKu",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check public/app.js && node --check server.mjs",
+    "test": "node tests/flow.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

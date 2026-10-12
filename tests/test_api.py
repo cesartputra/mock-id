@@ -124,6 +124,17 @@ def test_settings_and_review_validation(client):
     assert DukcapilService().check({'nik':'1234567890123456'})['identity_verified'] is False
 
 
+def test_dukcapil_demo_pass_does_not_enable_official_production_adapter(monkeypatch):
+    monkeypatch.setenv('MOCK_ID_MODE','demo')
+    demo=DukcapilService().check({'nik':'1234567890123456'})
+    assert demo['status']=='passed' and demo['simulated'] and demo['identity_demo_passed']
+    assert not demo['identity_verified']
+    monkeypatch.setenv('MOCK_ID_MODE','production')
+    production=DukcapilService().check({'nik':'1234567890123456'})
+    assert production['status']=='pending' and not production['source_available']
+    assert not production['identity_verified'] and not production.get('identity_demo_passed')
+
+
 def test_swagger_header_scheme(client):
     spec=client.get('/openapi.json').json()
     assert spec['components']['securitySchemes']['APIKeyHeader']['name']=='X-Local-Client'

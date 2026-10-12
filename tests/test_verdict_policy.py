@@ -160,3 +160,29 @@ def test_uncertain_pad_route_requires_valid_proof_and_never_autoapproves():
     policy.mode='demo'
     policy.calibrator.calibrated=True
     assert policy.route(result,controls)['decision']=='REJECTED'
+
+
+def test_mock_dukcapil_pass_is_persisted_and_reset_without_changing_official_identity(client, face_image, policy_case):
+    state,run,session=policy_case
+    session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
+    session.proof_checked_revision=session.revision
+    session.liveness_selfie='protocol-fixture-binding'
+    workflow=client.app.state.workflow
+    workflow.attest(session.application_id,client.fixture_actor,True)
+    result=run()
+    dukcapil=next(c for c in result['checks'] if c['name']=='Dukcapil')
+    assert dukcapil['status']=='passed' and dukcapil['mode']=='mock'
+    assert result['identity_demo_passed'] and not result['identity_verified']
+    routed=workflow.ingest(session,result,face_image,face_image,[face_image])
+    assert routed['state']=='AUTO_APPROVED' and routed['identity_demo_passed']
+    assert workflow.snapshot(routed['id'],client.fixture_actor)['identity_demo_passed']
+    workflow.invalidate(routed['id'],client.fixture_actor,session.revision+1)
+    assert not workflow.snapshot(routed['id'],client.fixture_actor)['identity_demo_passed']
+
+
+def test_mock_dukcapil_pass_does_not_approve_uncertain_pad(policy_case):
+    state,run,_session=policy_case
+    state['pad']=.01
+    result=run()
+    assert result['identity_demo_passed'] and result['pad_review_required']
+    assert result['status']=='manual'

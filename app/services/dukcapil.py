@@ -6,8 +6,9 @@ class IdentityValidationAdapter:
 
 class MockIdentityAdapter(IdentityValidationAdapter):
     def check(self,identity):
-        return {'mode':'mock','status':'not_verified','identity_verified':False,'source_available':True,
-            'source':'demo_local_only','message':'API Dukcapil tidak dipanggil. Identitas belum dikonfirmasi oleh sumber resmi.'}
+        return {'mode':'mock','status':'passed','identity_demo_passed':True,
+            'identity_verified':False,'source_available':True,'simulated':True,
+            'source':'demo_local_only','message':'Dukcapil dianggap lolos untuk simulasi demo. API resmi tidak dipanggil.'}
 
 class OfficialIdentityAdapter(IdentityValidationAdapter):
     def check(self,identity):

@@ -1,5 +1,7 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.0.4**: Dukcapil pada mode demo dianggap **passed** dan ditampilkan sebagai **MOCK · lolos simulasi**. Respons adapter memiliki `status=passed`, `simulated=true`, dan hasil/permohonan memiliki `identity_demo_passed=true`. Flag `identity_verified` tetap khusus validasi resmi. Pemeriksaan OCR/wajah/gerakan/PAD dan aturan keputusan tetap berjalan. Profil produksi tetap memerlukan adapter resmi. Restart server sesudah pull; perubahan berlaku untuk pemeriksaan baru.
+
 Pembaruan **3.0.3**: frame preview dan liveness memakai kualitas yang sama (hingga 1920 px, JPEG 0.95, tanpa memperbesar resolusi kamera). Pada mode demo tanpa kalibrasi disetujui, skor PAD rendah diperlakukan sebagai perlu pemeriksaan manual. Gerakan tetap harus terbaca dari model; PAD tetap diperiksa pada rekaman, selfie dan foto memegang KTP. PAD yang belum terpenuhi menahan persetujuan otomatis/PDF dan otomatis mengambil kuota pemeriksaan hari ini bila tersedia. Produksi dan profil terkalibrasi mempertahankan aturan PAD ketat. Menu, form login petugas, dan halaman workspace petugas di UI dihapus; link lama diarahkan ke beranda. Sesudah pull, restart server dan reload browser.
 
 Pembaruan **3.0.2**: memperbaiki regresi pengiriman frame liveness dari versi 3.0. Filter blur/cahaya di browser tidak lagi menghentikan preview atau stream liveness; server menerima sampel berurutan dan tetap memeriksa kualitas, penutup wajah, PAD, kontinuitas dan gerakan. Label wajah terdeteksi dipisahkan dari status siap melanjutkan. Kotak wajah lama tidak lagi memblokir pemeriksaan frame baru. Sesudah pull di `development/slik-verification`, hentikan server lama, jalankan `npm start`, lalu reload browser. Tidak perlu mengunduh model baru untuk pembaruan ini.
@@ -154,7 +156,7 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CoreML + CPU (Apple Silicon) atau CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
 | Diagnostik gambar (tidak menentukan kelulusan) | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
 | Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
-| Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
+| Dukcapil | Adapter mock: passed untuk simulasi demo, validasi resmi terpisah | `app/services/dukcapil.py` |
 
 Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT), FaceAttribNet (BSD-3-Clause), dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
 

@@ -100,3 +100,7 @@ Frontend tidak membaca daftar seluruh applications pemohon sebagai menu; status 
 ## Status gerakan dan PAD (3.0.3)
 
 `/liveness/frame` mengembalikan `pad_passed` dan `pad_review_required`. Pada demo belum terkalibrasi, `passed=true` bersama `pad_review_required=true` berarti bukti gerakan terukur sudah lengkap dan terikat selfie; KYC/PAD belum disetujui. `/verify` tetap menjalankan model PAD pada selfie/foto KYC, menyimpan kontrol PAD gagal dan merutekan ke pemeriksaan manual. Klien tidak boleh memakai flag gerakan sebagai otorisasi PDF/handoff. Hanya keputusan application yang masih berlaku dan berwenang dapat mengotorisasi hasil. Produksi/profil terkalibrasi tetap menahan proof bila PAD gagal.
+
+## Dukcapil demo (3.0.4)
+
+Adapter mock mengembalikan `status: passed`, `simulated: true`, `identity_demo_passed: true`, `identity_verified: false`. Hasil verifikasi dan snapshot permohonan memuat `identity_demo_passed`; UI menampilkan MOCK · lolos simulasi. Flag `identity_verified` tetap khusus identitas yang divalidasi oleh sumber berwenang. Produksi memilih adapter resmi dan tetap ditahan bila belum tersedia. Status mock tidak mengubah hasil model/PAD atau keputusan review. Hasil lama tidak diubah; lakukan pemeriksaan baru untuk memakai status mock baru.

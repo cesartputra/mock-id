@@ -412,7 +412,13 @@ class VerificationService:
             log.error('Inference failed for session %s; type %s', session.id, type(exc).__name__)
             checks.append({'name': 'Ketersediaan inference', 'status': 'unavailable', 'detail': {'message': reason}, 'mode': 'real'})
         dukcapil = self.dukcapil.check(identity)
-        checks.append({'name': 'Dukcapil', 'status': 'passed' if dukcapil['identity_verified'] else 'not_verified', 'detail': dukcapil, 'mode': dukcapil['mode']})
+        identity_demo_passed = bool(
+            dukcapil['mode'] == 'mock' and dukcapil.get('simulated') is True
+            and dukcapil.get('status') == 'passed'
+        )
+        checks.append({'name': 'Dukcapil', 'status': 'passed' if dukcapil['identity_verified'] or identity_demo_passed else 'not_verified', 'detail': dukcapil, 'mode': dukcapil['mode']})
+        if status == 'pass' and identity_demo_passed:
+            reason = 'Seluruh kontrol KYC utama terpenuhi. Dukcapil lolos simulasi (MOCK).'
         if not dukcapil.get('source_available',True):
             status,reason='technical',dukcapil['message']
             retry={'stage':'verify','label':'Tunggu adapter identitas berwenang','reason':reason}
@@ -427,6 +433,7 @@ class VerificationService:
             and status == "manual"
             and scores.get("liveness", 1) < rules["pad_probability"]
         )
+        result['identity_demo_passed'] = identity_demo_passed
         self.repository.save_result(result)
         self.repository.audit('Verifikasi selesai', f'{status}: {reason}', result['id'])
         return result

@@ -158,6 +158,7 @@ class WorkflowService:
             ),
             "verification_id": p.get("verification_id"),
             "identity_verified": p.get("identity_verified", False),
+            "identity_demo_passed": p.get("identity_demo_passed", False),
             "authority_verified": p.get("authority_verified", False),
             "channel": "authenticated_dashboard",
             "review_note_evidence": (p.get("review") or {}).get("note_evidence"),
@@ -262,6 +263,7 @@ class WorkflowService:
                 evidence=[],
                 verification_id=None,
                 reservation=None,
+                identity_demo_passed=False,
             )
             con.execute(
                 "UPDATE manual_cases SET state='CANCELLED' WHERE application_id=? AND state NOT IN ('CANCELLED','COMPLETED')",
@@ -360,6 +362,7 @@ class WorkflowService:
                     else routing_reason
                 ),
                 identity_verified=bool(result.get("identity_verified")),
+                identity_demo_passed=bool(result.get("identity_demo_passed")),
                 authority_verified=bool(authority["verified"]),
                 authority_assessment=authority,
                 identity_assessment={

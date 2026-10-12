@@ -1,5 +1,7 @@
 # Demo verifikasi dan permohonan persisten
 
+Pada demo versi 3.0.4, hasil adapter Dukcapil diasumsikan passed dan ditandai **MOCK · lolos simulasi** (`identity_demo_passed=true`). Status lolos simulasi ini terpisah dari validasi resmi dan tidak mengubah hasil model atau kebutuhan review.
+
 Profil ini **bukan layanan resmi OJK**, tidak memanggil Dukcapil/SLIK resmi dan tidak mengirim email. Status AUTO_APPROVED/MANUAL_APPROVED pada demo mengizinkan **hasil sintetis saja**. Identitas resmi tetap `identity_verified=false`. Laporan dengan data keuangan sintetis berlabel **DEMO — BUKAN INFORMASI DEBITUR RESMI**. Nama, NIK, tanggal lahir dan alamat debitur berasal dari bukti identitas server yang diputuskan. Kreditur, plafon, baki debet, suku bunga dan riwayat kredit adalah contoh acak sintetis, bukan kondisi keuangan orang tersebut.
 
 ## Alur dan batas kepercayaan

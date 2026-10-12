@@ -5,7 +5,7 @@ Jalankan `npm run setup:test`, `npm run check`, `npm test`, dan `npm run benchma
 ## Hasil pengujian
 
 - `npm run check`: lulus pemeriksaan syntax Python dan JavaScript.
-- `npm test` (3.0.3): **158 pytest lulus, 2 dilewatkan; 44 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
+- `npm test` (3.0.4): **161 pytest lulus, 2 dilewatkan; 46 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
 - Dua skip: native NVIDIA CUDA (Mac tidak memiliki CUDA EP/GPU) dan PostgreSQL server (tidak ada MOCK_ID_POSTGRES_TEST_URL). Bobot/model lokal tersedia; tidak ada tes model dilewatkan karena bobot hilang.
 - CPU/CoreML Swin V2 benar-benar dijalankan: parity logits maksimum `4.291534423828125e-06`, probabilitas `8.226236358765959e-10`. Profiler mengamati 2050 event CoreML dan 4760 event CPU pada profil hybrid, dibanding CPU-only 10280 event. Median tujuh warmed calls CPU 0,2300 detik; CoreML 0,2419 detik. Tiga varian gambar astronaut publik. Angka ini bukan FPS kamera, atribusi fisik GPU/ANE, akurasi identitas atau ketahanan spoof.
 
@@ -62,3 +62,9 @@ Tes protokol memeriksa warning review yang tetap tampak, masker tidak diloloskan
 UI tidak menampilkan akses/login/workspace petugas. Bootstrap browser tetap memakai cookie guest yang terpisah; API petugas/integrasi tetap berotorisasi dan tidak dibuka menjadi operator anonim. Tes Node menjalankan deep-link dan bootstrap aktual. Browser QA pada database disposable localhost:4187 memverifikasi beranda tanpa login, link lama #account kembali ke #home, lalu Pendaftaran dengan tiga jenis debitur. Kamera pemohon tidak diaktifkan. Bukti tampilan: `outputs/public-ui-without-staff-login.png` di workspace chat.
 
 Validasi 3.0.3: `npm run check` lulus; 158 Python dan 44 Node lulus, 2 skip lingkungan. Setelah koreksi bootstrap tombol help yang dihapus dari shell, browser diperiksa ulang dan seluruh tes Node serta syntax check lulus. Pengujian ini membuktikan routing/status/otorisasi, bukan peningkatan akurasi Swin terhadap wajah pemohon; kalibrasi webcam masih diperlukan.
+
+## Pembaruan 3.0.4: Dukcapil dianggap lolos pada demo
+
+Adapter mock mengembalikan passed/simulated dengan flag identitas demo tersendiri. Tes memeriksa mode produksi tetap memilih adapter resmi yang unavailable/pending, hasil pipeline/check Dukcapil passed dengan identitas resmi false, flag lolos simulasi tersimpan pada permohonan dan dihapus setelah capture diganti, serta PAD meragukan tetap manual. Tes UI menjalankan renderer checklist dan panel permohonan aktual: label MOCK · lolos simulasi tampil tanpa klaim validasi resmi dan status manual tidak berubah.
+
+`npm run check` dan `npm test` lulus: 161 Python, 46 Node, 2 skip lingkungan. Tidak ada panggilan Dukcapil resmi, perubahan hasil historis atau pengambilan kamera pengguna pada pembaruan ini.

@@ -2916,3 +2916,56 @@ dialog::backdrop {
 .public-mode .verification-aside .scenario-card {
   display: none;
 }
+.score p {
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.score > small:last-child {
+  display: block;
+  margin-top: 10px;
+}
+.check-reason {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #997346;
+  margin-top: 6px;
+  max-width: 660px;
+}
+.result-control > div {
+  flex: 1;
+  padding-right: 16px;
+}
+.other-retakes {
+  margin-top: 22px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.other-retakes summary {
+  cursor: pointer;
+}
+.retry-notice {
+  padding: 18px;
+  margin-bottom: 24px;
+  border: 1px solid #ecd4ac;
+  border-radius: 5px;
+  background: #fff8ee;
+  line-height: 1.7;
+}
+.retry-notice strong {
+  display: block;
+  color: #936424;
+}
+.retry-notice p {
+  color: #826c4b;
+  margin: 5px 0;
+}
+.retry-notice small {
+  color: #8c8376;
+}
+@media (max-width: 600px) {
+  .score-grid .score strong {
+    font-size: 22px;
+  }
+}

@@ -110,8 +110,9 @@ def test_retake_consumed_session_flushes_dependents_and_keeps_audit(client, face
     assert updated['id'] == public['id'] and updated['nonce'] != public['nonce']
     assert updated['revision'] == 1 and updated['attempt'] == 2
     assert not session.consumed and not session.last_result and session.last_preview == 0
-    if stage == 'holding':
-        assert session.liveness_proof == 'test-proof-token' and session.document is not None
+    if stage in ['holding', 'document']:
+        assert session.liveness_proof == 'test-proof-token'
+        assert (session.document is None) == (stage == 'document')
     else:
         assert session.liveness_result is None and session.liveness_proof is None
         assert session.liveness_manifest is None and session.liveness_selfie is None
@@ -264,3 +265,56 @@ def test_stream_issues_proof_only_at_completion_and_binds_first_neutral_frame(cl
             assert session.liveness_selfie == first_hash
             assert session.stream_state is None and session.liveness_nonce is None
     assert client.post(route, data={'capture_nonce': capture_info['capture_nonce'], 'seq': len(samples)}, files={'image': ('frame.jpg', blob, 'image/jpeg')}).status_code == 409
+
+
+@pytest.mark.parametrize('stage', ['document', 'liveness', 'holding', 'verify'])
+def test_automatic_retry_targets_failed_stage_and_retains_other_evidence(client, face_image, stage):
+    public, session = seed_session(client, face_image)
+    seed_proof(session)
+    session.consumed = True
+    session.last_result = {'status': 'technical' if stage == 'verify' else 'capture',
+                           'retry': {'stage': stage, 'label': 'Ulangi tahap ini', 'reason': 'Unit regression'}}
+    response = client.post(f'/api/sessions/{session.id}/retry')
+    assert response.status_code == 200, response.text
+    resumed = response.json()
+    assert resumed['id'] == public['id'] and resumed['retry']['stage'] == stage
+    assert resumed['nonce'] != public['nonce'] and resumed['attempt'] == 2
+    assert not session.consumed and session.last_result is None
+    assert (session.document is None) == (stage == 'document')
+    assert (session.liveness_proof is None) == (stage == 'liveness')
+    if stage != 'liveness':
+        assert session.liveness_selfie == 'test-selfie-hash'
+        assert session.liveness_manifest == 'test-manifest'
+
+
+def test_ocr_retry_preserves_live_proof_and_rejects_old_nonce(client, real_models, ktp_image, face_image):
+    public, session = seed_session(client, face_image)
+    seed_proof(session)
+    session.consumed = True
+    session.last_result = {'status': 'capture', 'retry': {'stage': 'document', 'label': 'Ulangi foto KTP', 'reason': 'Wajah dokumen tidak terbaca'}}
+    client.app.state.verifier.ocr = real_models.ocr
+    updated = client.post(f'/api/sessions/{session.id}/retry').json()
+    response = client.post(f'/api/sessions/{session.id}/document', files={'image': ('card.jpg', encoded(ktp_image), 'image/jpeg')}, headers={'X-Capture-Revision': str(updated['revision'])})
+    assert response.status_code == 200
+    assert session.document_result['fields']['nik'] == '1234567890123456'
+    assert session.liveness_proof == 'test-proof-token'
+    assert session.liveness_selfie == 'test-selfie-hash'
+    with pytest.raises(__import__("fastapi").HTTPException) as invalid:
+        client.app.state.sessions.consume(session.id, public['nonce'])
+    assert invalid.value.status_code == 409 and not session.consumed
+
+
+@pytest.mark.parametrize('bad_stage', ['document', 'liveness', 'holding'])
+def test_real_face_capture_failure_identifies_correct_retry_stage(real_models, face_image, bad_stage):
+    import numpy as np
+    from app.model.entities import CaptureSession
+    blank = np.full_like(face_image, 180)
+    session = CaptureSession()
+    session.document = blank if bad_stage == 'document' else face_image
+    session.document_result = {'fields': {'nik': '1234567890123456', 'name': 'TEST STAGE'}, 'confidence': .9, 'engine': 'protocol fixture'}
+    session.liveness_result = {'passed': True, 'pad_probability': .9, 'mode': 'protocol_test_fixture'}
+    result = real_models.run(session, blank if bad_stage == 'liveness' else face_image,
+                             blank if bad_stage == 'holding' else face_image, [], [])
+    assert result['status'] == 'capture' and result['retry']['stage'] == bad_stage
+    assert result['checks'][-2]['stage'] == bad_stage
+    assert result['checks'][-2]['detail']['message'] == result['reason']

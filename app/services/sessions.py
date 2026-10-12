@@ -53,7 +53,20 @@ class SessionService:
                 raise HTTPException(409, 'Sesi ini belum dapat dicoba ulang.')
             if s.attempt >= MAX_ATTEMPTS:
                 raise HTTPException(429, 'Batas percobaan tercapai. Buat sesi baru.')
-            return self.reset(session_id, 'liveness', s.nonce)
+            return self.reset(session_id, self.retry_plan(s)['stage'], s.nonce)
+
+    def retry_plan(self, s):
+        if s.last_result and s.last_result.get('retry'):
+            return dict(s.last_result['retry'])
+        # Older persisted results have no stage metadata. Prefer the unfinished
+        # held photo when document and server liveness proof are still present.
+        stage = ('verify' if s.last_result and s.last_result['status'] == 'technical'
+                 else 'holding' if s.document is not None and s.liveness_result and s.liveness_result.get('passed')
+                 else 'liveness' if s.document is not None else 'document')
+        return {'stage': stage, 'label': {'verify': 'Jalankan pemeriksaan ulang',
+                'holding': 'Ulangi foto bersama KTP', 'liveness': 'Ulangi liveness',
+                'document': 'Ulangi foto KTP'}[stage],
+                'reason': (s.last_result or {}).get('reason', 'Perbaiki tahap yang belum terpenuhi.')}
 
     def clear_liveness(self, s):
         s.liveness_result = None
@@ -76,7 +89,7 @@ class SessionService:
     def reset(self, session_id, stage, nonce):
         with self.lock:
             s = self.get(session_id)
-            if stage not in ['document', 'liveness', 'holding']:
+            if stage not in ['document', 'liveness', 'holding', 'verify']:
                 raise HTTPException(422, 'Tahap capture tidak valid.')
             if not secrets.compare_digest(s.nonce, nonce):
                 raise HTTPException(409, 'Token reset sudah berubah. Gunakan sesi terbaru.')
@@ -92,7 +105,7 @@ class SessionService:
             s.nonce = secrets.token_urlsafe(32)
             s.last_preview = 0.0
             s.last_result = None
-            if stage != 'holding' or not (s.liveness_result and s.liveness_result.get('passed')):
+            if stage == 'liveness' or not (s.liveness_result and s.liveness_result.get('passed')):
                 self.clear_liveness(s)
             if stage == 'document':
                 s.document = None

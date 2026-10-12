@@ -107,7 +107,9 @@ def test_actual_pipeline_does_not_fabricate_success(client,real_models,face_imag
     assert r.status_code==200,r.text
     result=r.json()
     assert result['status']=='capture' # No held card, so no invented scores/pass.
-    assert result['scores'].get('face_cosine') is None
+    assert result['scores']['face_cosine'] > .99
+    assert result['retry']['stage']=='holding'
+    assert result['checks'][-2]['stage']=='holding'
     assert result['identity_verified'] is False
     assert result['checks'][-1]['mode']=='mock'
     assert len(client.get('/api/workspace').json()['records'])==1

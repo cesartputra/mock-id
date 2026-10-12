@@ -168,33 +168,48 @@ class VerificationService:
         identity = session.document_result['fields']
         rules = self.repository.settings()
         scores = {}
+        stage = 'verify'
+        retry = None
         status, reason = 'pass', 'Seluruh pemeriksaan lokal terpenuhi. Pengecekan identitas resmi Dukcapil belum dilakukan.'
 
         def add(name, passed, detail, mode='real'):
-            checks.append({'name': name, 'status': 'passed' if passed else 'failed', 'detail': detail, 'mode': mode})
+            checks.append({'name': name, 'status': 'passed' if passed else 'failed', 'detail': detail, 'mode': mode, 'stage': stage})
 
         try:
             with self.lock:
                 self.load()
+                stage = 'liveness'
                 proof=session.liveness_result
                 if not proof or not proof.get('passed'):
                     raise CaptureError('Rekam dan lolos pemeriksaan liveness sebelum foto KTP.')
                 add('Liveness saat rekaman',True,proof)
                 scores['liveness']=proof['pad_probability']
                 doc = session.document
+                stage = 'document'
                 ref_face = self.face.one(doc, allow_small_extra=True)
+                stage = 'liveness'
                 self_face = self.face.one(selfie)
+                stage = 'holding'
                 holding_face = self.face.one(holding, allow_small_extra=True)
+                stage = 'document'
                 add('OCR KTP', True, {'confidence': session.document_result['confidence'], 'engine': session.document_result['engine']})
                 scores['ocr'] = session.document_result['confidence']
+                stage = 'liveness'
                 q = quality(selfie)
                 if q['blur'] < rules['blur_min'] or not 35 < q['brightness'] < 235:
                     raise CaptureError('Selfie terlalu buram, gelap, atau silau.')
                 for label,image in [('Selfie',selfie),('Foto KYC',holding)]:
+                    stage = 'liveness' if label == 'Selfie' else 'holding'
                     visible=self.visibility.inspect(image,holding=label=='Foto KYC')
                     add(label+' tanpa penutup wajah',visible['ready'],visible)
                     if not visible['ready']:
                         raise CaptureError(label+': '+visible['warnings'][0]['message'])
+                face_score = self.face.compare(doc, ref_face, selfie, self_face)
+                kyc_face_score = self.face.compare(selfie, self_face, holding, holding_face)
+                scores['face_cosine'], scores['kyc_face_cosine'] = face_score, kyc_face_score
+                add('Wajah KTP ↔ selfie', face_score >= rules['face_cosine'], {'cosine': face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
+                add('Wajah selfie ↔ foto KYC', kyc_face_score >= rules['face_cosine'], {'cosine': kyc_face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
+                stage = 'holding'
                 card=HoldingCardService(self.ocr).read(holding,reference=doc,expected_nik=identity['nik'])
                 held_ocr,card_box=card['reading'],card['box']
                 same_card = held_ocr['fields']['nik'] == identity['nik']
@@ -204,11 +219,7 @@ class VerificationService:
                 add('Tangan dekat KTP', hand['passed'], hand)
                 if not hand['passed']:
                     raise CaptureError('Tangan yang memegang KTP belum terdeteksi. Tampilkan tangan dan kartu secara utuh dalam foto.')
-                face_score = self.face.compare(doc, ref_face, selfie, self_face)
-                kyc_face_score = self.face.compare(selfie, self_face, holding, holding_face)
-                scores['face_cosine'], scores['kyc_face_cosine'] = face_score, kyc_face_score
-                add('Wajah KTP ↔ selfie', face_score >= rules['face_cosine'], {'cosine': face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
-                add('Wajah selfie ↔ foto KYC', kyc_face_score >= rules['face_cosine'], {'cosine': kyc_face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
+                stage = 'liveness'
                 if proof.get('stream'):
                     live = proof['live']
                     continuity = proof['continuity']
@@ -229,6 +240,7 @@ class VerificationService:
                 add('Kontinuitas wajah capture', same_face, {'cosines': continuity, 'threshold': rules['face_cosine'], 'scope': 'Pencocokan frame; bukan attestation kamera atau deteksi seluruh injection.'})
                 scores['liveness'] = pad_score
                 add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], {'samples': pad_scores, 'minimum_live_probability': pad_score, 'threshold': rules['pad_probability']})
+                stage = 'verify'
                 _, aligned = self.face.feature(selfie, self_face)
                 fake = self.deepfake.score(aligned)
                 _, held_aligned = self.face.feature(holding, holding_face)
@@ -240,14 +252,19 @@ class VerificationService:
                     status, reason = 'attack', 'Model memberi sinyal risiko spoof/manipulasi. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.'
                 elif not live['passed']:
                     status, reason = 'capture', 'Gerakan tantangan belum terbaca. Ulangi capture dengan wajah terang dan gerakan lebih jelas.'
+                    stage = 'liveness'
+                    retry = {'stage': stage, 'label': 'Ulangi liveness', 'reason': reason}
                 elif not same_card or face_score < rules['face_cosine'] or kyc_face_score < rules['face_cosine'] or not same_face:
                     status, reason = 'manual', 'Kesesuaian dokumen atau wajah belum memenuhi ambang. Perlu pemeriksaan petugas.'
         except CaptureError as exc:
             status, reason = 'capture', str(exc)
-            checks.append({'name': 'Kualitas capture', 'status': 'failed', 'detail': {'message': reason}, 'mode': 'real'})
+            label = {'document': 'Kualitas foto KTP', 'liveness': 'Kualitas selfie / liveness', 'holding': 'Kualitas foto bersama KTP'}.get(stage, 'Kualitas capture')
+            retry = {'stage': stage, 'label': {'document': 'Ulangi foto KTP', 'liveness': 'Ulangi liveness', 'holding': 'Ulangi foto bersama KTP'}.get(stage, 'Periksa kembali'), 'reason': reason}
+            checks.append({'name': label, 'status': 'failed', 'detail': {'message': reason}, 'mode': 'real', 'stage': stage})
         except Exception as exc:
             status = 'technical'
             reason = str(exc) if isinstance(exc, ModelUnavailable) else 'Pemrosesan model mengalami gangguan. Lihat log server dan coba ulang.'
+            retry = {'stage': 'verify', 'label': 'Jalankan pemeriksaan ulang', 'reason': reason}
             self.last_error = reason
             log.exception('Inference failed for session %s', session.id)
             checks.append({'name': 'Ketersediaan inference', 'status': 'unavailable', 'detail': {'message': reason}, 'mode': 'real'})
@@ -257,7 +274,7 @@ class VerificationService:
                   'name': identity.get('name') or 'Pemohon', 'nik_masked': '•••• •••• •••• '+identity['nik'][-4:],
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
-                  'rules': rules, 'identity_verified': False, 'dukcapil': dukcapil, 'inference': 'real'}
+                  'rules': rules, 'retry': retry, 'identity_verified': False, 'dukcapil': dukcapil, 'inference': 'real'}
         self.repository.save_result(result)
         self.repository.audit('Verifikasi selesai', f'{status}: {reason}', result['id'])
         return result

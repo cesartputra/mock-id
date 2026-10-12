@@ -206,9 +206,12 @@ def create_session(request: Request):
 @router.post('/sessions/{session_id}/retry')
 def retry_session(session_id: str, request: Request):
     sessions, _, repository = services(request)
-    session = sessions.retry(session_id)
+    with sessions.lock:
+        sessions.check_revision(sessions.get(session_id), request)
+        plan = sessions.retry_plan(sessions.get(session_id))
+        session = sessions.retry(session_id)
     repository.audit('Percobaan ulang', f'Percobaan {session.attempt}; nonce server diperbarui.', session.id)
-    return session.public()
+    return {**session.public(), 'retry': plan}
 
 
 class Retake(BaseModel):
@@ -250,7 +253,10 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
             raise HTTPException(409, 'Capture berubah atau sesi sedang diproses.')
         session.document = decoded
         session.document_result = result
-        sessions.clear_liveness(session)
+        # Live-person evidence is independent of the card image. Replacing the
+        # document still forces fresh face/NIK comparisons in final verify.
+        if not (session.liveness_result and session.liveness_result.get('passed')):
+            sessions.clear_liveness(session)
     repository.audit('OCR selesai', f'NIK terbaca; confidence {result["confidence"]:.3f}. Gambar tidak disimpan ke disk.', session.id)
     return result
 

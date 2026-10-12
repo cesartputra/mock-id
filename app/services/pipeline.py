@@ -218,7 +218,7 @@ class VerificationService:
         scores = {}
         stage = 'verify'
         retry = None
-        status, reason = 'pass', 'Seluruh pemeriksaan lokal terpenuhi. Pengecekan identitas resmi Dukcapil belum dilakukan.'
+        status, reason = 'pass', 'Seluruh kontrol KYC utama terpenuhi. Pengecekan identitas resmi Dukcapil belum dilakukan.'
 
         def add(name, passed, detail, mode='real'):
             checks.append({'name': name, 'status': 'passed' if passed else 'failed', 'detail': detail, 'mode': mode, 'stage': stage})
@@ -289,15 +289,29 @@ class VerificationService:
                 scores['liveness'] = pad_score
                 add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], {'samples': pad_scores, 'minimum_live_probability': pad_score, 'threshold': rules['pad_probability']})
                 stage = 'verify'
-                _, aligned = self.face.feature(selfie, self_face)
-                fake = self.deepfake.score(aligned)
-                _, held_aligned = self.face.feature(holding, holding_face)
-                held_fake = self.deepfake.score(held_aligned)
-                fake_risk = max(fake['fake_probability'], held_fake['fake_probability'])
-                scores['deepfake'] = fake_risk
-                add('Risiko manipulasi gambar', fake_risk < rules['deepfake_risk'], {'selfie': fake, 'kyc': held_fake, 'maximum_fake_probability': fake_risk, 'threshold': rules['deepfake_risk']})
-                if pad_score < rules['pad_probability'] or fake_risk >= rules['deepfake_risk']:
-                    status, reason = 'attack', 'Model memberi sinyal risiko spoof/manipulasi. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.'
+                # This generic AI-image classifier is not calibrated for KYC
+                # face crops. Keep its real output for diagnostics, but never
+                # let it declare an attack or invalidate otherwise valid KYC.
+                diagnostic = {'name': 'Classifier gambar AI (diagnostik)', 'mode': 'real',
+                              'effect': 'advisory', 'stage': stage, 'calibrated': False}
+                try:
+                    _, aligned = self.face.feature(selfie, self_face)
+                    fake = self.deepfake.score(aligned)
+                    _, held_aligned = self.face.feature(holding, holding_face)
+                    held_fake = self.deepfake.score(held_aligned)
+                    fake_risk = max(fake['fake_probability'], held_fake['fake_probability'])
+                    scores['deepfake'] = fake_risk
+                    diagnostic.update(status='informational', detail={
+                        'selfie': fake, 'kyc': held_fake, 'maximum_fake_probability': fake_risk,
+                        'reference_threshold': rules['deepfake_risk'],
+                        'message': 'Classifier belum dikalibrasi untuk capture KYC. Skor disimpan sebagai diagnostik dan tidak menentukan kelulusan.'})
+                except Exception:
+                    log.exception('Image diagnostic unavailable for session %s', session.id)
+                    diagnostic.update(status='unavailable', detail={
+                        'message': 'Analisis gambar tambahan tidak tersedia; keputusan memakai kontrol KYC utama.'})
+                checks.append(diagnostic)
+                if pad_score < rules['pad_probability']:
+                    status, reason = 'attack', 'Model anti-spoof / PAD memberi sinyal risiko foto atau layar. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.'
                 elif not live['passed']:
                     status, reason = 'capture', 'Gerakan tantangan belum terbaca. Ulangi capture dengan wajah terang dan gerakan lebih jelas.'
                     stage = 'liveness'
@@ -322,7 +336,8 @@ class VerificationService:
                   'name': identity.get('name') or 'Pemohon', 'nik_masked': '•••• •••• •••• '+identity['nik'][-4:],
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
-                  'rules': rules, 'retry': retry, 'identity_verified': False, 'dukcapil': dukcapil, 'inference': 'real'}
+                  'rules': rules, 'retry': retry, 'identity_verified': False, 'dukcapil': dukcapil, 'inference': 'real',
+                  'decision_policy': 'kyc-core-v1-ai-image-diagnostic'}
         self.repository.save_result(result)
         self.repository.audit('Verifikasi selesai', f'{status}: {reason}', result['id'])
         return result

@@ -1,0 +1,69 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync("app/view/static/app.js", "utf8");
+const context = vm.createContext({
+  esc: (value) => String(value),
+  pct: (value) =>
+    typeof value === "number"
+      ? (value * 100).toFixed(1) + "%"
+      : "Belum diperiksa",
+});
+vm.runInContext(
+  source.slice(
+    source.indexOf("function checkRows("),
+    source.indexOf("function resultView()"),
+  ),
+  context,
+);
+const result = {
+  scores: { face_cosine: 0.62, liveness: 0.972, deepfake: 0.997 },
+  rules: { face_cosine: 0.363 },
+  checks: [
+    { name: "Anti-spoof / PAD", status: "passed", mode: "real" },
+    {
+      name: "Classifier gambar AI (diagnostik)",
+      status: "informational",
+      effect: "advisory",
+      mode: "real",
+      detail: { message: "Belum dikalibrasi; tidak menentukan kelulusan." },
+    },
+    { name: "Dukcapil", status: "not_verified", mode: "mock" },
+  ],
+};
+test("applicant results show core checks without a fake/manipulation verdict", () => {
+  const html = context.scoreCards(result) + context.checkRows(result);
+  assert.match(html, /0.620/);
+  assert.match(html, /97.2%/);
+  assert.match(html, /Anti-spoof/);
+  assert.match(html, /MOCK · belum diverifikasi/);
+  assert.doesNotMatch(
+    html,
+    /99.7%|Fake probability|Classifier|manipulasi|Belum terpenuhi/,
+  );
+});
+test("operator diagnostics keep the raw score without labelling it a failed control", () => {
+  const html =
+    context.scoreCards(result, { diagnostics: true }) +
+    context.checkRows(result, { diagnostics: true });
+  assert.match(html, /99.7%/);
+  assert.match(html, /Diagnostik/);
+  assert.match(html, /tidak menentukan kelulusan/);
+  assert.doesNotMatch(html, /Fake probability|Belum terpenuhi/);
+});
+test("a real core failure remains visible in applicant results", () => {
+  const html = context.checkRows({
+    ...result,
+    checks: [
+      {
+        name: "Anti-spoof / PAD",
+        status: "failed",
+        mode: "real",
+        detail: { message: "Risiko foto/layar" },
+      },
+    ],
+  });
+  assert.match(html, /Belum terpenuhi/);
+  assert.match(html, /Risiko foto\/layar/);
+});

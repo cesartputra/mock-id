@@ -112,13 +112,13 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
 | Anti-spoof | MiniFASNetV2 / ONNX Runtime CPU | [Face anti-spoofing](https://github.com/yakhyo/face-anti-spoofing), [Silent Face](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) |
-| Manipulasi | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
+| Diagnostik gambar (tidak menentukan kelulusan) | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
 | Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
 | Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
 
 Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT), FaceAttribNet (BSD-3-Clause), dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
 
-SFace memakai ambang cosine awal 0.363. Ambang PAD, classifier deepfake, dan blur dapat diubah di UI; seluruh keputusan menggunakan konfigurasi backend. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
+SFace memakai ambang cosine awal 0.363. Ambang PAD, cosine, dan blur dapat diubah di UI; keputusan menggunakan konfigurasi backend. Ambang classifier gambar hanya referensi diagnostik dan tidak menentukan kelulusan KYC. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
 
 Gerakan dihitung dari landmark aktual: baseline eye aspect ratio ≥0.22 lalu tertutup ≤0.19 dan ≤70% baseline; senyum menambah lebar mulut relatif ≥10% dan ≥0.06; putaran kepala mengubah posisi hidung relatif ≥0.12. Batas ini perlu diuji pada perangkat dan kondisi capture Anda.
 
@@ -219,3 +219,11 @@ Hasil deteksi tangan sekarang memakai boolean Python biasa. Sebelumnya, saat tan
 Jika pemeriksaan final atau penyimpanan mengalami gangguan, klik **Jalankan model** kembali setelah penyebab gangguan diperbaiki. Klien meminta nonce baru melalui retry terbatas, mempertahankan OCR, selfie/bukti liveness yang sudah lolos, serta foto KYC, lalu memeriksa ulang capture tersebut. Tidak ada pengulangan submit otomatis tanpa batas atau pelonggaran kontrol model. Sesi tetap memiliki batas percobaan dan masa berlaku; restart server menghapus capture dalam memori sehingga memerlukan sesi baru.
 
 Untuk memperbarui: hentikan server dengan `Ctrl+C`, jalankan `git pull --ff-only`, lalu `npm start` dan reload halaman. Perbaikan ini tidak membutuhkan unduhan bobot atau instalasi library tambahan.
+
+## Perbaikan 2.4.2: classifier gambar menjadi diagnostik
+
+Classifier ViT Real/Fake umum belum dikalibrasi untuk potongan wajah hasil kamera KYC. Skor kelas Fake yang tinggi tidak lagi membuat hasil `attack` atau kontrol “Risiko manipulasi gambar — belum terpenuhi”. Hasil pemohon menampilkan skor kecocokan wajah dan PAD serta kontrol KYC utama. Detail operator dan ekspor JSON mempertahankan keluaran classifier asli sebagai `effect: advisory`, `status: informational`, dan `calibrated: false`. Skor tidak diubah menjadi nol atau “asli”; ambang `deepfake_risk` hanya referensi diagnostik. Error saat menjalankan analisis tambahan ini dicatat sebagai diagnostik tidak tersedia tanpa menggagalkan kontrol utama.
+
+Keputusan tetap menahan PAD rendah, tantangan gerakan gagal, visibilitas buruk, kartu/tangan tidak terbaca, ketidaksesuaian NIK/wajah dan kontinuitas wajah. Pendaftaran perseorangan tetap memerlukan hasil server `status: pass`. Hasil baru mencatat `decision_policy: kyc-core-v1-ai-image-diagnostic`; Dukcapil tetap mock. Ini perubahan kebijakan penggunaan model, bukan fine-tuning atau bukti bahwa classifier sudah akurat untuk semua kamera.
+
+Tes regresi kebijakan memakai fixture terpisah: PAD 97,2%, cosine 0,620 dan skor classifier 99,7% tetap dapat lolos ketika kontrol utama terpenuhi; tiap kegagalan kontrol utama tetap menahan handoff. Tes model nyata tetap memakai fixture publik. Webcam/KTP pribadi pengguna tidak dimasukkan ke test fixture. Hasil lama tidak dihitung ulang atau diubah; lakukan pemeriksaan baru sesudah menghentikan server, `git pull --ff-only`, `npm start`, dan reload halaman. Tidak perlu unduhan model atau dependensi baru.

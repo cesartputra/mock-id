@@ -5,7 +5,7 @@ Jalankan `npm run setup:test`, `npm run check`, `npm test`, dan `npm run benchma
 ## Hasil pengujian
 
 - `npm run check`: lulus pemeriksaan syntax Python dan JavaScript.
-- `npm test`: **149 pytest lulus, 2 dilewatkan; 30 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
+- `npm test` (3.0.2): **149 pytest lulus, 2 dilewatkan; 40 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
 - Dua skip: native NVIDIA CUDA (Mac tidak memiliki CUDA EP/GPU) dan PostgreSQL server (tidak ada MOCK_ID_POSTGRES_TEST_URL). Bobot/model lokal tersedia; tidak ada tes model dilewatkan karena bobot hilang.
 - CPU/CoreML Swin V2 benar-benar dijalankan: parity logits maksimum `4.291534423828125e-06`, probabilitas `8.226236358765959e-10`. Profiler mengamati 2050 event CoreML dan 4760 event CPU pada profil hybrid, dibanding CPU-only 10280 event. Median tujuh warmed calls CPU 0,2300 detik; CoreML 0,2419 detik. Tiga varian gambar astronaut publik. Angka ini bukan FPS kamera, atribusi fisik GPU/ANE, akurasi identitas atau ketahanan spoof.
 
@@ -40,3 +40,13 @@ PDF native dibaca pypdf dan dirender Poppler, seluruh halaman ditinjau untuk tab
 Browser QA pada hostname localhost terpisah dari preview pengguna 127.0.0.1: seeded protocol fixture pada DB disposable. Memasukkan APP ID fixture di Status layanan memicu unduhan PDF otomatis yang benar-benar tersimpan oleh browser, tanpa menekan tombol unduh/cetak. Ini bukti transport/UI, bukan kelulusan AI pada webcam nyata.
 
 Validasi akhir 3.0.1: npm run check dan npm test lulus (149 Python + 30 Node; 2 skip lingkungan). Browser mengunduh PDF empat halaman pada fixture penerbitan tiga fasilitas; nama/NIK/tanggal lahir tepat, isi keuangan acak. Reload halaman tidak mengirim ulang PDF secara otomatis; unduh ulang eksplisit tetap tersedia.
+
+## Pembaruan 3.0.2: regresi pengiriman frame kamera
+
+Perbandingan dengan `origin/main` pada commit `8c41958` menunjukkan detektor YuNet dan layanan visibility yang sama. Regresi ditemukan pada filter kualitas browser versi 3: ia menghentikan preview dan frame streaming liveness saat blur/cahaya/posisi dianggap belum siap. Posisi wajah yang disimpan dari frame lama juga dapat memblokir request yang seharusnya memperbarui posisi itu. Kualitas dan posisi liveness kini diperiksa pada frame baru oleh server; label kotak membedakan wajah ditemukan dan kualitas siap.
+
+Tes Node menjalankan fungsi `monitorCamera`, `recordChallenges` dan `drawFaceDetection` dari sumber aplikasi dalam VM dengan respons protokol, tanpa kamera fisik. Tes memeriksa pengiriman kontinu saat hint lokal gagal, dua pemeriksaan server sebelum mulai, peringatan masker yang tetap menghalangi mulai, pemulihan detector miss, nomor frame/nonce berurutan, satu request aktif, penolakan server, selfie yang tepat sesuai `selfie_seq`, respons generasi kamera lama, dan label wajah saat kualitas belum siap. Dokumen/foto memegang KTP tetap memerlukan gate kualitas lokal dan recheck server. Kotak wajah lama tidak menjadi veto kualitas baru.
+
+Inferensi model nyata, penolakan foto datar bergerak, replay/proof binding, kontinuitas wajah dan reset setelah penutup/spoof tetap dicakup oleh suite Python. Tidak ada perubahan threshold model atau pelolosan otomatis dari UI. Pengujian protokol ini membuktikan perbaikan alur pengiriman; belum mengukur akurasi atau FPS pada kamera fisik pengguna.
+
+Validasi 3.0.2: `npm run check` dan `npm test` lulus (149 Python, 40 Node, 2 skip lingkungan). Empat tes preview/overlay dijalankan terhadap sumber `app.js` sebelum perbaikan (`c6b6421`) dan semuanya gagal sebagaimana diharapkan; keempatnya lulus pada sumber baru.

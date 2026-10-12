@@ -825,7 +825,6 @@ async function openCamera(kind) {
     `<p>${kind === "liveness" ? "Ikuti tiga tantangan dari server. Setiap tantangan dimulai dengan wajah netral." : kind === "holding" ? "Pegang KTP di bawah dagu. Tampilkan wajah, tangan, dan seluruh teks kartu." : "Dekatkan KTP ke kamera agar teks terlihat tajam."}</p><div class="camera-preview"><video id="camera-video" autoplay playsinline muted aria-label="Pratinjau kamera"></video><canvas id="camera-detection" aria-hidden="true"></canvas><div class="camera-overlay ${kind === "holding" ? "holding" : kind === "document" ? "document" : ""}"><span class="camera-face-guide"></span>${kind !== "liveness" ? '<span class="camera-card-guide">KTP</span>' : ""}</div></div><div class="live-challenge-progress" id="live-challenge-progress"></div><div class="camera-live-prompt" id="camera-prompt">Menunggu kamera…</div><div class="capture-feedback checking" id="camera-feedback" role="status" aria-live="polite">${kind === "document" ? "Dekatkan kartu agar NIK tajam." : "Memeriksa wajah dan risiko foto/layar…"}</div><p class="state-note" id="camera-status">Izinkan kamera jika browser meminta.</p><div class="auto-capture-status">${icon("check")} Pengambilan otomatis · tidak perlu menekan tombol foto atau rekam</div><div class="form-actions"><button class="button" data-close>Batal</button></div>`,
   );
   cameraKind = kind;
-  qualityGate.lastFace = null;
   cameraAutoGate = kind === "liveness" ? null : new AutoCaptureGate(kind);
   const token = cameraToken;
   try {
@@ -914,7 +913,9 @@ function showCameraFeedback(state) {
         ? "NIK dan potret KTP terbaca. Menyiapkan foto otomatis…"
         : cameraKind === "holding"
           ? "NIK cocok, tangan dan wajah terlihat. Menyiapkan foto otomatis…"
-          : "Wajah terlihat jelas. Tantangan liveness dimulai otomatis."
+          : recording
+            ? "Wajah terdeteksi. Ikuti instruksi gerakan di atas."
+            : "Wajah terlihat jelas. Tantangan liveness dimulai otomatis."
       : "Tahan posisi sebentar untuk pemeriksaan berikutnya…";
 }
 async function monitorCamera(token) {
@@ -933,8 +934,14 @@ async function monitorCamera(token) {
   );
   try {
     const kind = cameraKind;
-    const local = await qualityGate.inspect($("#camera-video"), kind);
-    if (!local.ready) {
+    // Liveness needs successive frames, including motion and recovery frames.
+    // Browser sharpness/lighting hints must not starve the server detector.
+    // Document/holding auto-capture still uses the local quality gate.
+    const local =
+      kind === "liveness"
+        ? null
+        : await qualityGate.inspect($("#camera-video"), kind);
+    if (local && !local.ready) {
       cameraAutoGate?.reset();
       cameraFeedback.update(
         {
@@ -961,8 +968,6 @@ async function monitorCamera(token) {
         : await inspectAutoBlob(blob, kind, cameraCheckAbort.signal);
     clearTimeout(timeout);
     if (token !== cameraToken || cameraCheckingPaused) return;
-    if (result.face_box && result.image_size)
-      qualityGate.lastFace = { box: result.face_box, size: result.image_size };
     drawFaceDetection(
       result.face_box,
       result.image_size,
@@ -1050,11 +1055,13 @@ function drawFaceDetection(box, size, ready, cardBox = null) {
   ctx.fillStyle = ctx.strokeStyle;
   ctx.font = "600 13px sans-serif";
   ctx.fillText(
-    ready
-      ? cameraKind === "document"
+    cameraKind === "document"
+      ? ready
         ? "Potret KTP terbaca"
-        : "Wajah terdeteksi"
-      : "Perbaiki posisi / capture",
+        : "Potret KTP terdeteksi; perbaiki capture"
+      : ready
+        ? "Wajah terdeteksi"
+        : "Wajah terdeteksi; periksa peringatan",
     left + box[0] * scale,
     Math.max(16, top + box[1] * scale - 8),
   );
@@ -1123,15 +1130,8 @@ async function recordChallenges() {
       if (performance.now() - started > 90_000)
         throw new Error("Pemeriksaan terlalu lama. Ulangi liveness.");
       const frameStarted = performance.now();
-      const local = await qualityGate.inspect($("#camera-video"), "liveness");
-      if (!local.ready) {
-        $("#camera-feedback").textContent =
-          local.warnings.join(" ") +
-          " (heuristik demo; gerakan belum dikirim ke server)";
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        seq--;
-        continue;
-      }
+      // Send every sampled frame. Server visibility, PAD and temporal rules
+      // decide whether it contributes evidence; a browser hint cannot skip it.
       const blob = await captureBlob(960, 0.9);
       const data = new FormData();
       data.append("capture_nonce", capture.capture_nonce);

@@ -4,7 +4,6 @@ class QualityGate {
   constructor() {
     this.model = null;
     this.mode = "heuristic_demo";
-    this.lastFace = null;
   }
   async loadOnnx({
     ort,
@@ -95,15 +94,8 @@ class QualityGate {
       Math.round(canvas.height * 0.7),
     );
     const result = this.pixels(region.data, region.width, region.height);
-    if (this.lastFace && context !== "document") {
-      const { box, size } = this.lastFace;
-      const [x, y, w, h] = box;
-      const [iw, ih] = size;
-      if (w / iw < 0.08 || x < 0 || y < 0 || x + w > iw || y + h > ih) {
-        result.ready = false;
-        result.warnings.push("Posisikan wajah utuh di depan kamera.");
-      }
-    }
+    // Face position is checked on each new server frame. A cached box must
+    // never block requests that would update it after the user moves.
     if (this.model) {
       const { ort, inputSize, outputName, threshold } = this.model;
       canvas.width = inputSize;

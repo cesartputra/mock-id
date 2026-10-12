@@ -33,7 +33,7 @@ const icon = (name) =>
 const names = {
   home: "Beranda",
   account: "Akses petugas",
-  requests: "Permohonan saya",
+  result: "Hasil verifikasi",
   registration: "Pendaftaran",
   postkyc: "Data permohonan",
   receipt: "Bukti pendaftaran",
@@ -185,6 +185,7 @@ async function reloadWorkspace() {
   if (accessMode && accessMode !== mode) {
     authEpoch++;
     stopCamera();
+    stopDeliveryWatch();
     releasePreviews();
     flow = null;
     selectedApplication = null;
@@ -205,12 +206,15 @@ async function reloadWorkspace() {
     }
     throw error;
   }
-  const results = await Promise.all([
-    api("/applications"),
-    api("/manual/calendar"),
-  ]);
-  applicationRows = results[0];
-  capacityCalendar = results[1];
+  if (["admin", "helpdesk"].includes(principal.role)) {
+    [applicationRows, capacityCalendar] = await Promise.all([
+      api("/applications"),
+      api("/manual/calendar"),
+    ]);
+  } else {
+    applicationRows = [];
+    capacityCalendar = null;
+  }
   if (principal.role === "admin" || principal.role === "helpdesk")
     workspace = await api("/workspace");
   else
@@ -253,7 +257,7 @@ function render() {
   updateNav();
   const views = {
     account: accountView,
-    requests: requestsView,
+    result: deliveryView,
     home: publicHome,
     registration: publicRegistration,
     postkyc: postKycView,
@@ -289,16 +293,28 @@ async function navigate(target) {
       principal?.role === "applicant" &&
       ["dashboard", "queue", "audit", "modules"].includes(page)
     )
-      page = "requests";
+      page = "home";
     if (
       principal?.role === "helpdesk" &&
       ["dashboard", "audit", "modules"].includes(page)
     )
       page = "queue";
+    if (page === "result" && !selectedApplication) {
+      let active = null;
+      try {
+        active = sessionStorage.getItem("mock_id_active_application");
+      } catch {}
+      if (active)
+        selectedApplication = await api(
+          "/applications/" + encodeURIComponent(active),
+        );
+    }
     if (page === "verify" && !flow) await newFlow(false);
     history.replaceState(null, "", "#" + page);
     render();
     window.scrollTo(0, 0);
+    if (page === "result") await observeDelivery(selectedApplication);
+    else if (page !== "verify") stopDeliveryWatch();
   } catch (e) {
     document.body.classList.toggle("public-mode", publicPages.has(page));
     updateNav();
@@ -312,6 +328,7 @@ async function newFlow(show = true, applicationId = null) {
   $("#modal").close();
   releasePreviews();
   selectedApplication = null;
+  stopDeliveryWatch();
   if (!principal) {
     principal = (await api("/auth/guest", { method: "POST" })).principal;
   }
@@ -319,6 +336,7 @@ async function newFlow(show = true, applicationId = null) {
     method: "POST",
     body: JSON.stringify({ application_id: applicationId }),
   });
+  rememberApplication(session.application_id);
   flow = {
     session,
     step: 0,
@@ -408,7 +426,7 @@ function verifyView() {
     "Foto + KTP",
     "Hasil",
   ];
-  return `${head("Verifikasi identitas", "Verifikasi identitas untuk pendaftaran debitur perseorangan.", `<span class="badge green">PERSEORANGAN · KYC LOKAL</span>`, "APPLICANT EXPERIENCE")}<div class="verification-layout"><section class="panel verification-panel"><div class="stepper">${stepNames.map((name, i) => `<div class="step ${flow.step === i ? "current" : flow.step > i ? "done" : ""}"><b>${flow.step > i ? "✓" : i + 1}</b>${name}</div>`).join("")}</div><div class="step-content">${flow.retryPlan && !busy && flow.step !== 4 ? `<div class="retry-notice"><strong>${esc(flow.retryPlan.label)}</strong><p>${esc(flow.retryPlan.reason)}</p><small>OCR, liveness, dan foto lain yang sudah tersedia dipertahankan. Pencocokan dengan capture baru tetap diperiksa ulang.</small></div>` : ""}${busy ? '<h2>Memproses model…</h2><p class="step-description">Model memproses gambar atau rekaman sesuai tahap pemeriksaan di server lokal.</p><span class="spinner"></span><p class="state-note">Tunggu hasil backend. Waktu proses bergantung perangkat dan ukuran capture.</p>' : [documentView, identityView, livenessView, holdingView, resultView][flow.step]()}</div></section><aside class="verification-aside"><section class="panel session-card"><h3>Sesi verifikasi</h3><div class="session-row"><span>ID</span><strong class="session-id">${esc(flow.session.id.slice(0, 8).toUpperCase())}</strong></div><div class="session-row"><span>Percobaan</span><strong>${flow.session.attempt} / ${flow.session.max_attempts}</strong></div><div class="session-row"><span>Berlaku sampai</span><strong>${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(flow.session.expires_at * 1000))} WIB</strong></div><div class="state-note">Nonce sekali pakai dan batas percobaan diperiksa oleh server. Sesi capture berakhir setelah 15 menit atau saat server dimulai ulang.</div></section><section class="panel scenario-card"><h3>Model yang digunakan</h3><p>Semua analisis foto menjalankan model. Tidak ada pemilih hasil simulasi.</p>${["PaddleOCR melalui RapidOCR", "YuNet + SFace", "PIPNet + MediaPipe Hand ONNX", "CVPR 2024 Swin V2-B (face)", "ViT classifier (diagnostik tambahan)", "FaceAttribNet: kacamata & masker"].map((n) => `<div class="model-runtime-line"><span class="green-dot"></span>${n}</div>`).join("")}<div class="simulation-note">Dukcapil adalah satu-satunya adapter mock. Hasil identitas resmi tetap “belum diverifikasi”.</div></section></aside></div>`;
+  return `${head("Verifikasi identitas", "Verifikasi identitas untuk pendaftaran debitur perseorangan.", `<span class="badge green">PERSEORANGAN · KYC LOKAL</span>`, "APPLICANT EXPERIENCE")}<div class="verification-layout"><section class="panel verification-panel"><div class="stepper">${stepNames.map((name, i) => `<div class="step ${flow.step === i ? "current" : flow.step > i ? "done" : ""}"><b>${flow.step > i ? "✓" : i + 1}</b>${name}</div>`).join("")}</div><div class="step-content">${flow.retryPlan && !busy && flow.step !== 4 ? `<div class="retry-notice"><strong>${esc(flow.retryPlan.label)}</strong><p>${esc(flow.retryPlan.reason)}</p><small>OCR, liveness, dan foto lain yang sudah tersedia dipertahankan. Pencocokan dengan capture baru tetap diperiksa ulang.</small></div>` : ""}${busy ? '<h2>Memproses model…</h2><p class="step-description">Model memproses gambar atau rekaman sesuai tahap pemeriksaan di server lokal.</p><span class="spinner"></span><p class="state-note">Tunggu hasil backend. Waktu proses bergantung perangkat dan ukuran capture.</p>' : [documentView, identityView, livenessView, holdingView, resultView][flow.step]()}</div></section><aside class="verification-aside"><section class="panel session-card"><h3>Sesi verifikasi</h3><div class="session-row"><span>ID</span><strong class="session-id">${esc(flow.session.id.slice(0, 8).toUpperCase())}</strong></div><div class="session-row"><span>Percobaan</span><strong>${flow.session.attempt} / ${flow.session.max_attempts}</strong></div><div class="session-row"><span>Berlaku sampai</span><strong>${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(flow.session.expires_at * 1000))} WIB</strong></div><div class="state-note">Nonce sekali pakai dan batas percobaan diperiksa oleh server. Sesi capture berakhir setelah 15 menit atau saat server dimulai ulang.</div></section><section class="panel scenario-card"><h3>Model yang digunakan</h3><p>Semua analisis foto menjalankan model. Tidak ada pemilih hasil simulasi.</p>${["PaddleOCR melalui RapidOCR", "YuNet + SFace", "PIPNet + MediaPipe Hand ONNX", "CVPR 2024 Swin V2-B (face)", "ViT classifier (diagnostik tambahan)", "FaceAttribNet: kacamata & masker"].map((n) => `<div class="model-runtime-line"><span class="green-dot"></span>${n}</div>`).join("")}<div class="simulation-note">Dukcapil belum terhubung. Data keuangan SLIK memakai adapter demo; identitas resmi tetap belum diverifikasi.</div></section></aside></div>`;
 }
 function documentView() {
   return `<h2>Foto KTP yang akan dibaca</h2><p class="step-description">Setujui pemrosesan lalu buka kamera. Foto dan OCR berjalan otomatis setelah NIK serta potret KTP terbaca. Gunakan kartu utuh dan pencahayaan merata; unggahan gambar tetap tersedia.</p><div class="upload-zone">${icon("upload")}<h3>JPG, PNG, atau WebP</h3><p>Maksimal 5 MB / 16 megapiksel</p><div class="upload-buttons"><button class="button primary" data-camera="document" ${flow.consent ? "" : "disabled"}>Buka kamera otomatis</button><button class="button" data-upload="document">Pilih gambar KTP</button><input type="file" id="document-file" accept="image/jpeg,image/png,image/webp" hidden aria-label="Unggah KTP"></div>${flow.documentURL ? `<img class="image-preview" src="${flow.documentURL}" alt="Pratinjau foto KTP">` : ""}</div><label class="scenario"><input type="checkbox" id="consent" ${flow.consent ? "checked" : ""}><span>Saya setuju memproses capture pada server lokal ini.<small>Saya meminta informasi untuk diri sendiri. Bukti yang diperlukan disimpan terenkripsi sesuai retensi demo untuk pemeriksaan manual.</small></span></label><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><span class="micro">NIK akan dibaca model, tanpa isian contoh.</span>${flow.documentBlob ? `<button class="button primary" data-ocr ${flow.consent ? "" : "disabled"}>Baca gambar unggahan ${icon("arrow")}</button>` : ""}</div>`;
@@ -463,7 +481,7 @@ function resultView() {
   const r = flow.result;
   if (!r) return "";
   if (r.application)
-    return `${applicationPanel(r.application)}<div class="form-actions">${["CAPTURE_RETRY", "TECHNICAL_PENDING"].includes(r.application.state) ? `<button class="button primary" data-retry ${flow.session.attempt >= flow.session.max_attempts ? "disabled" : ""}>${esc(r.retry?.label || "Ulangi tahap yang perlu diperbaiki")} (${flow.session.attempt}/${flow.session.max_attempts})</button>` : ""}<button class="button" data-page="requests">Status permohonan</button></div>${
+    return `${applicationPanel(r.application)}<div class="form-actions">${["CAPTURE_RETRY", "TECHNICAL_PENDING"].includes(r.application.state) ? `<button class="button primary" data-retry ${flow.session.attempt >= flow.session.max_attempts ? "disabled" : ""}>${esc(r.retry?.label || "Ulangi tahap yang perlu diperbaiki")} (${flow.session.attempt}/${flow.session.max_attempts})</button>` : ""}<button class="button" data-page="home">Kembali ke beranda</button></div>${
       !["REJECTED", "MANUAL_REJECTED"].includes(r.application.state)
         ? `<details class="other-retakes"><summary>Ambil ulang tahap lain</summary><div class="retake-options">${[
             ["document", "OCR KTP"],
@@ -637,6 +655,15 @@ async function runVerification() {
     selectedApplication = flow.result.application || null;
     await reloadWorkspace();
   });
+  if (
+    selectedApplication &&
+    !["CAPTURE_RETRY", "TECHNICAL_PENDING"].includes(selectedApplication.state)
+  ) {
+    page = "result";
+    history.replaceState(null, "", "#result");
+    render();
+  }
+  await observeDelivery(selectedApplication);
 }
 let captureResetting = false;
 async function prepareCapture(stage, keepInput = false) {
@@ -654,6 +681,7 @@ async function prepareCapture(stage, keepInput = false) {
     flow.session = updated;
     flow.pendingVerificationRetry = false;
     flow.result = null;
+    stopDeliveryWatch();
     CaptureState.reset(
       flow,
       stage,
@@ -1400,5 +1428,6 @@ window.addEventListener("hashchange", () => {
 window.addEventListener("beforeunload", () => {
   stopCamera();
   releasePreviews();
+  stopDeliveryWatch();
 });
 navigate(location.hash.slice(1) || "home");

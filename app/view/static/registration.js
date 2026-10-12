@@ -17,7 +17,7 @@ const purposeLabels = {
 const publicPages = new Set([
   "home",
   "account",
-  "requests",
+  "result",
   "registration",
   "verify",
   "postkyc",
@@ -116,7 +116,7 @@ function receiptView() {
   return `<section class="public-form-panel receipt-panel"><div class="receipt-symbol">${icon("check")}</div><span class="home-kicker">BUKTI PENDAFTARAN DEMO</span><h1>Permohonan demo diterima</h1><p>Simpan nomor ini untuk melihat status layanan di aplikasi lokal.</p><div class="receipt-number"><small>NOMOR PENDAFTARAN</small><strong>${esc(r.id)}</strong></div><dl class="registration-summary"><div><dt>Pemohon</dt><dd>${esc(r.name)}</dd></div><div><dt>Jenis debitur</dt><dd>${debtorTypes[r.debtor_type]}</dd></div><div><dt>Waktu pendaftaran</dt><dd>${date(r.created)} WIB</dd></div><div><dt>Status</dt><dd><span class="badge orange">Diterima — mock</span></dd></div><div><dt>Verifikasi wajah</dt><dd>${r.kyc === "local_checks_passed" ? "Kontrol lokal terpenuhi" : r.kyc === "preview" ? "Pratinjau; KYC belum dijalankan" : "Tidak berlaku untuk jenis debitur ini"}</dd></div></dl><div class="registration-notice neutral">${icon("info")}<p>Ini bukan bukti pendaftaran OJK. Tidak ada laporan SLIK yang diterbitkan atau email yang dikirim. Pengecekan Dukcapil belum dilakukan.</p></div><div class="receipt-actions"><button class="button" data-download-receipt>${icon("download")} Unduh bukti demo</button><button class="button primary" data-page="status">Cek status layanan</button><button class="button link" data-page="home">Kembali ke beranda</button></div></section>`;
 }
 function publicStatus() {
-  return `<section class="public-form-panel">${registrationHeader("?", "Status layanan", "Cek pendaftaran yang tersimpan pada server demo ini.")}<form id="registration-status-form"><div class="field"><label for="registration-number">Nomor pendaftaran demo <em>*</em></label><input id="registration-number" name="registration_id" placeholder="DEMO-XXXXXXXXXX" value="${esc(registrationReceipt?.id || "")}" required maxlength="30"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-page="home">Kembali</button><button type="submit" class="button primary">Cek status ${icon("arrow")}</button></div></form></section>`;
+  return `<section class="public-form-panel">${registrationHeader("?", "Status layanan", "Masukkan nomor permohonan untuk mengecek pemeriksaan atau mengunduh PDF.")}<form id="registration-status-form"><div class="field"><label for="registration-number">Nomor permohonan / pendaftaran <em>*</em></label><input id="registration-number" name="registration_id" placeholder="APP-… atau DEMO-…" value="${esc(registrationReceipt?.id || "")}" required maxlength="30"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-page="home">Kembali</button><button type="submit" class="button primary">Cek status ${icon("arrow")}</button></div></form></section>`;
 }
 async function goPublic(target) {
   location.hash = target;
@@ -238,6 +238,15 @@ document.addEventListener("submit", async (event) => {
         render();
       }
     } else {
+      const requestedId = data.registration_id.trim().toUpperCase();
+      if (requestedId.startsWith("APP-")) {
+        selectedApplication = await api(
+          "/applications/" + encodeURIComponent(requestedId),
+        );
+        rememberApplication(selectedApplication.id);
+        await goPublic("result");
+        return;
+      }
       registrationReceipt = await api(
         `/registrations/${encodeURIComponent(data.registration_id.trim().toUpperCase())}`,
       );

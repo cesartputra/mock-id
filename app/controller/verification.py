@@ -85,8 +85,6 @@ def start_liveness(session_id: str, request: Request):
             raise HTTPException(409,'Sesi sedang atau sudah diproses.')
         if session.document is None:
             raise HTTPException(422,'Baca KTP sebelum merekam liveness.')
-        if session.liveness_attempts>=MAX_ATTEMPTS:
-            raise HTTPException(429,'Batas tiga rekaman liveness tercapai. Mulai sesi baru.')
         session.liveness_attempts+=1
         session.liveness_nonce=secrets.token_urlsafe(32)
         session.liveness_started=time.monotonic()
@@ -122,7 +120,7 @@ async def live_frame(session_id: str, request: Request, capture_nonce: str = For
         try:
             result = await request.app.state.inference_queue.run(verifier.inspect_liveness_frame, capture, decoded, digest, seq, session=session, flag="liveness_processing")
         except CaptureError as exc:
-            capture.gestures.reset_action()
+            capture.pause_detection()
             result = capture.result({'ready': False, 'warnings': [{'code': 'face_missing', 'message': str(exc)}], 'face_box': None})
         except ModelUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc

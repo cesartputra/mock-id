@@ -318,3 +318,62 @@ def test_real_face_capture_failure_identifies_correct_retry_stage(real_models, f
     assert result['status'] == 'capture' and result['retry']['stage'] == bad_stage
     assert result['checks'][-2]['stage'] == bad_stage
     assert result['checks'][-2]['detail']['message'] == result['reason']
+
+
+def test_detection_retries_do_not_use_three_recordings_budget(client, face_image):
+    public, session = seed_session(client, face_image)
+    previous_nonce = None
+    for _ in range(8):
+        started = client.post(f'/api/sessions/{session.id}/liveness/start')
+        assert started.status_code == 200, started.text
+        nonce=started.json()['capture_nonce']
+        assert nonce != previous_nonce
+        assert session.liveness_proof is None
+        if previous_nonce:
+            old=client.post(f'/api/sessions/{session.id}/liveness/frame',data={'capture_nonce':previous_nonce,'seq':0},files={'image':('frame.jpg',encoded(face_image),'image/jpeg')})
+            assert old.status_code==409
+        previous_nonce=nonce
+        reset=client.post(f'/api/sessions/{session.id}/retake',json={'stage':'liveness','nonce':session.nonce})
+        assert reset.status_code==200,reset.text
+        assert session.attempt==1 and session.document is not None
+    assert session.retake_attempts.get('liveness',0)==0
+
+
+def test_brief_detector_gap_pauses_evidence_without_resetting_baseline():
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    baseline=capture.gestures.baseline
+    capture.gestures.hits=1
+    capture.pause_detection(now=10)
+    assert capture.gestures.baseline==baseline
+    assert capture.gestures.hits==0
+    assert not capture.result({'ready':False,'warnings':[]})['passed']
+    capture.pause_detection(now=10.3)
+    assert capture.gestures.baseline==baseline
+    capture.pause_detection(now=10.4)
+    assert capture.gestures.baseline is None
+    assert not capture.gestures.completed
+
+
+def test_prolonged_detector_gap_requires_fresh_neutral_evidence():
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    capture.pause_detection(now=10)
+    capture.pause_detection(now=11.1)
+    assert capture.gestures.baseline is None
+    capture.resume_detection()
+    assert capture.detection_missing_since is None and capture.detection_misses==0
+
+
+def test_mask_and_spoof_still_reset_gesture_after_soft_gap(client, monkeypatch):
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    verifier=client.app.state.verifier
+    # Detector outputs isolate state transitions, not model accuracy.
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'mask','message':'Masker'}]})
+    result=verifier.inspect_liveness_frame(capture,None,'x',0)
+    assert capture.gestures.baseline is None and not result['passed']
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'spoof_risk','message':'Spoof'}]})
+    first=verifier.inspect_liveness_frame(capture,None,'y',1)
+    second=verifier.inspect_liveness_frame(capture,None,'z',2)
+    assert not first['done'] and second['done'] and not second['passed']

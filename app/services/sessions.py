@@ -106,14 +106,16 @@ class SessionService:
                 raise HTTPException(409, 'Token reset sudah berubah. Gunakan sesi terbaru.')
             if s.processing or s.liveness_processing:
                 raise HTTPException(409, 'Pemeriksaan masih berjalan. Tunggu sebelum mengambil ulang.')
+            charge_retake = stage != "liveness" or s.consumed or bool(s.liveness_proof)
             if s.consumed:
                 if s.attempt >= MAX_ATTEMPTS:
                     raise HTTPException(429, 'Batas percobaan tercapai. Buat sesi baru.')
                 s.attempt += 1
                 s.liveness_attempts = 0
             count=s.retake_attempts.get(stage,0)
-            if count>=MAX_ATTEMPTS:raise HTTPException(429,'Batas pengambilan ulang tahap ini tercapai. Buat permohonan baru.')
-            s.retake_attempts={**s.retake_attempts,stage:count+1}
+            if charge_retake:
+                if count>=MAX_ATTEMPTS:raise HTTPException(429,'Batas pengambilan ulang tahap ini tercapai. Buat permohonan baru.')
+                s.retake_attempts={**s.retake_attempts,stage:count+1}
             s.proof_checked_revision=None
             s.revision += 1
             s.consumed = False

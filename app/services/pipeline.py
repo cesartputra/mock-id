@@ -148,7 +148,12 @@ class VerificationService:
             feedback = self.inspect_capture(image)
             capture.rules = self.repository.settings()
             if not feedback['ready']:
-                capture.gestures.reset_action()
+                codes = {w['code'] for w in feedback['warnings']}
+                if codes and codes <= {'face_missing', 'inference_busy'}:
+                    capture.pause_detection()
+                else:
+                    capture.resume_detection()
+                    capture.gestures.reset_action()
                 spoof = any(w['code'] == 'spoof_risk' for w in feedback['warnings'])
                 capture.spoof_strikes = capture.spoof_strikes+1 if spoof else 0
                 result = capture.result(feedback)
@@ -156,6 +161,10 @@ class VerificationService:
                     result.update(done=True, passed=False, reason='Risiko foto/layar terdeteksi. Rekam ulang dengan wajah langsung.')
                 return result
             capture.spoof_strikes = 0
+            # A prolonged gap must establish fresh neutral evidence.
+            if capture.detection_missing_since is not None and time.monotonic() - capture.detection_missing_since > 1.0:
+                capture.gestures.reset_action()
+            capture.resume_detection()
             face = self.face.one(image)
             metrics = self.landmarks.metrics(image)
             if capture.reference_image is None:

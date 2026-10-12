@@ -196,4 +196,7 @@ def test_liveness_capture_tokens_and_real_static_rejection(client,real_models,fa
     second=client.post(f'/api/sessions/{s["id"]}/liveness/start').json()
     assert second['capture_nonce']!=capture['capture_nonce']
     client.post(f'/api/sessions/{s["id"]}/liveness/start')
-    assert client.post(f'/api/sessions/{s["id"]}/liveness/start').status_code==429
+    fourth=client.post(f'/api/sessions/{s["id"]}/liveness/start')
+    assert fourth.status_code==200
+    assert fourth.json()['capture_nonce']!=second['capture_nonce']
+    assert not session.liveness_proof and not session.consumed

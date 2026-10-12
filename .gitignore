@@ -22,3 +22,5 @@ coverage/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+
+output/

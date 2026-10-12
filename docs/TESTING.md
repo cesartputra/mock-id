@@ -5,7 +5,7 @@ Jalankan `npm run setup:test`, `npm run check`, `npm test`, dan `npm run benchma
 ## Hasil pengujian
 
 - `npm run check`: lulus pemeriksaan syntax Python dan JavaScript.
-- `npm test`: **139 pytest lulus, 2 dilewatkan; 27 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
+- `npm test`: **149 pytest lulus, 2 dilewatkan; 30 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
 - Dua skip: native NVIDIA CUDA (Mac tidak memiliki CUDA EP/GPU) dan PostgreSQL server (tidak ada MOCK_ID_POSTGRES_TEST_URL). Bobot/model lokal tersedia; tidak ada tes model dilewatkan karena bobot hilang.
 - CPU/CoreML Swin V2 benar-benar dijalankan: parity logits maksimum `4.291534423828125e-06`, probabilitas `8.226236358765959e-10`. Profiler mengamati 2050 event CoreML dan 4760 event CPU pada profil hybrid, dibanding CPU-only 10280 event. Median tujuh warmed calls CPU 0,2300 detik; CoreML 0,2419 detik. Tiga varian gambar astronaut publik. Angka ini bukan FPS kamera, atribusi fisik GPU/ANE, akurasi identitas atau ketahanan spoof.
 
@@ -19,7 +19,7 @@ Browser guest tanpa login, HttpOnly ownership, login petugas terpisah, logout pe
 
 Queue/backpressure/timeout mempertahankan model/session lock sampai pekerjaan native selesai. Worker CPU memakai tensor dan bobot Swin nyata, parity dengan inferensi lokal; remote transport/checksum/TLS/error diuji. CUDA selection/fallback, PostgreSQL SQL adapter, Redis registry dan private S3 memakai unit fixtures; **bukan pengujian layanan deployment nyata**.
 
-## Pemeriksaan UI
+## Pemeriksaan UI dasar (V3.0)
 
 Database QA disposable terpisah dari data pemohon normal. Fixture manual dan review menggunakan foto astronaut publik dan skor protokol yang secara eksplisit diinjeksi hanya untuk QA. Ia membuktikan status/otorisasi/UI, bukan model liveness yang berhasil pada orang nyata. Jam/kuota QA 00:00–23:59 dan dua slot juga merupakan konfigurasi fixture, bukan default/SOP OJK.
 
@@ -30,3 +30,13 @@ Layout laporan diperiksa pada viewport normal dan **390 × 844**. Tidak ada over
 ## Batas hasil
 
 Tidak ada pengukuran accuracy/APCER/BPCER/populasi/aging/deepfake/injection yang dapat diklaim dari tes ini. Demo score belum terkalibrasi. Uji GPU nyata, PostgreSQL concurrency multiinstance, S3/Redis deployment, kanal resmi, audit/SOP dan kalibrasi produksi masih harus dilakukan dalam lingkungan yang disetujui. Tidak ada deployment atau panggilan layanan resmi OJK/Dukcapil selama development ini.
+
+## Pembaruan 3.0.1: liveness dan PDF
+
+Tes baru memeriksa lebih dari tiga restart/retake liveness yang belum menghasilkan proof tanpa menghapus dokumen atau meloloskan frame/token lama. Detector miss singkat tidak menghasilkan proof; gap panjang/penutup/spoof tetap mereset action/menolak. Final-verification attempt limits, replay, nonce dan session expiry tetap berlaku.
+
+PDF native dibaca pypdf dan dirender Poppler, seluruh halaman ditinjau untuk tabel, wrapping, watermark dan footer. Pengujian endpoint memastikan owner-only, keputusan expired/pending/revoked tidak mengunduh, dan revocation selama render tetap ditolak. Financial RNG berbeda untuk issuance berbeda, tetap sama untuk issuance yang sama; nama/NIK/tanggal lahir/alamat tetap dari bukti server. Adapter dengan identitas salah ditahan dan laporan v2 diperbarui sekali ke canonical identity.
+
+Browser QA pada hostname localhost terpisah dari preview pengguna 127.0.0.1: seeded protocol fixture pada DB disposable. Memasukkan APP ID fixture di Status layanan memicu unduhan PDF otomatis yang benar-benar tersimpan oleh browser, tanpa menekan tombol unduh/cetak. Ini bukti transport/UI, bukan kelulusan AI pada webcam nyata.
+
+Validasi akhir 3.0.1: npm run check dan npm test lulus (149 Python + 30 Node; 2 skip lingkungan). Browser mengunduh PDF empat halaman pada fixture penerbitan tiga fasilitas; nama/NIK/tanggal lahir tepat, isi keuangan acak. Reload halaman tidak mengirim ulang PDF secara otomatis; unduh ulang eksplisit tetap tersedia.

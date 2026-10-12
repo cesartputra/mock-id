@@ -1,5 +1,8 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.0.1**: detektor wajah yang kehilangan frame tidak menghabiskan batas tiga rekaman liveness. Menu Permohonan saya dihapus; hasil yang sudah `SLIK_READY` otomatis mengunduh PDF dari backend. Identitas debitur (nama, NIK, tanggal lahir) berasal dari bukti KTP server; hanya data keuangan demo diacak. Unduh ulang memakai laporan tersimpan yang sama. Sesudah pull, hentikan server lama, jalankan `npm run setup` (dependency ReportLab), `npm start`, lalu reload browser.
+
+
 ## Versi 3 — permohonan SLIK demo yang persisten
 
 Pembaruan ini ada di branch `development/slik-verification`. Alur lengkap: pemohon tanpa login → verifikasi model nyata → routing → pengambilan otomatis kuota hari ini dan pemeriksaan manual bila perlu → keputusan sah → hasil **DEMO — BUKAN INFORMASI DEBITUR RESMI**. Dukcapil, kewenangan resmi dan penerbitan resmi belum diintegrasikan; produksi ditahan sampai adapter/kalibrasi berwenang tersedia. Tidak ada deployment atau panggilan layanan resmi.

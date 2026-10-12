@@ -3,6 +3,7 @@
 No fixed action duration. A challenge completes on measured transitions;
 neutral samples, deadline and frame limits are guards, never proof of motion.
 """
+
 import secrets
 import statistics
 import time
@@ -24,7 +25,11 @@ class GestureTracker:
 
     @property
     def challenge(self):
-        return self.challenges[len(self.completed)] if len(self.completed) < len(self.challenges) else None
+        return (
+            self.challenges[len(self.completed)]
+            if len(self.completed) < len(self.challenges)
+            else None
+        )
 
     def update(self, metrics):
         if not self.challenge:
@@ -34,40 +39,61 @@ class GestureTracker:
         # Return to a neutral face between actions. A turned head, shut eyes or
         # held smile must not become a new baseline for the next challenge.
         if self.baseline is None:
-            neutral = (metrics['blink'] >= .22 and
-                       abs(metrics['yaw']-self.reference['yaw']) < .08 and
-                       metrics['smile'] <= self.reference['smile']*1.06)
+            neutral = (
+                metrics["blink"] >= 0.22
+                and abs(metrics["yaw"] - self.reference["yaw"]) < 0.08
+                and metrics["smile"] <= self.reference["smile"] * 1.06
+            )
             if not neutral:
                 self.baselines = []
                 return self.public()
             self.baselines.append(dict(metrics))
             if len(self.baselines) >= 3:
-                self.baseline = {k: statistics.median(m[k] for m in self.baselines) for k in metrics}
+                self.baseline = {
+                    k: statistics.median(m[k] for m in self.baselines) for k in metrics
+                }
             return self.public()
         base = self.baseline
         challenge = self.challenge
-        if challenge == 'blink':
-            if metrics['blink'] <= min(.19, base['blink']*.70):
+        if challenge == "blink":
+            if metrics["blink"] <= min(0.19, base["blink"] * 0.70):
                 self.closed = True
             # Require a full open -> closed -> open cycle, not just a low EAR.
-            detected = self.closed and metrics['blink'] >= max(.22, base['blink']*.85)
-        elif challenge == 'smile':
-            detected = metrics['smile'] >= base['smile']*1.10 and metrics['smile']-base['smile'] >= .06
+            detected = self.closed and metrics["blink"] >= max(
+                0.22, base["blink"] * 0.85
+            )
+        elif challenge == "smile":
+            detected = (
+                metrics["smile"] >= base["smile"] * 1.10
+                and metrics["smile"] - base["smile"] >= 0.06
+            )
         else:
-            detected = (metrics['yaw']-base['yaw'])*self.turn_direction >= .12
-        self.hits = self.hits+1 if detected else 0
+            detected = (metrics["yaw"] - base["yaw"]) * self.turn_direction >= 0.12
+        self.hits = self.hits + 1 if detected else 0
         if self.hits >= 2:
-            self.completed.append({'challenge': challenge, 'passed': True,
-                                   'baseline': base, 'evidence': dict(metrics), 'mode': 'real'})
+            self.completed.append(
+                {
+                    "challenge": challenge,
+                    "passed": True,
+                    "baseline": base,
+                    "evidence": dict(metrics),
+                    "mode": "real",
+                }
+            )
             self.reset_action()
         return self.public()
 
     def public(self):
         passed = self.challenge is None
-        return {'passed': passed, 'challenge': self.challenge,
-                'phase': 'complete' if passed else 'action' if self.baseline else 'neutral',
-                'completed': self.completed.copy(), 'turn_direction': self.turn_direction,
-                'neutral_samples': len(self.baselines), 'blink_closed': self.closed}
+        return {
+            "passed": passed,
+            "challenge": self.challenge,
+            "phase": "complete" if passed else "action" if self.baseline else "neutral",
+            "completed": self.completed.copy(),
+            "turn_direction": self.turn_direction,
+            "neutral_samples": len(self.baselines),
+            "blink_closed": self.closed,
+        }
 
 
 class LiveCapture:
@@ -89,30 +115,63 @@ class LiveCapture:
         self.spoof_strikes = 0
         self.rules = None
         self.evidence_images = []
+        self.detection_missing_since = None
+        self.detection_misses = 0
 
     def accept(self, digest, seq, now):
-        if now-self.started > self.DEADLINE or self.sequence >= self.MAX_FRAMES:
-            return 'Waktu pemeriksaan habis. Ambil ulang liveness dan ikuti instruksi gerakan.'
+        if now - self.started > self.DEADLINE or self.sequence >= self.MAX_FRAMES:
+            return "Waktu pemeriksaan habis. Ambil ulang liveness dan ikuti instruksi gerakan."
         if seq != self.sequence:
-            return 'Urutan frame berubah. Rekam ulang liveness.'
-        if self.last_frame and now-self.last_frame < .09:
-            return 'Frame terlalu cepat. Tunggu pemeriksaan frame sebelumnya.'
+            return "Urutan frame berubah. Rekam ulang liveness."
+        if self.last_frame and now - self.last_frame < 0.09:
+            return "Frame terlalu cepat. Tunggu pemeriksaan frame sebelumnya."
         if digest in self.hashes:
-            return 'Frame identik berulang. Gunakan wajah langsung, bukan pengulangan foto.'
-        if self.last_frame and now-self.last_frame > 3:
+            return "Frame identik berulang. Gunakan wajah langsung, bukan pengulangan foto."
+        if self.last_frame and now - self.last_frame > 3:
             self.gestures.reset_action()
         self.last_frame = now
         self.hashes.add(digest)
         self.sequence += 1
         return None
 
+    def pause_detection(self, now=None):
+        """Brief detector misses pause evidence, never count as a valid frame."""
+        now = time.monotonic() if now is None else now
+        if self.detection_missing_since is None:
+            self.detection_missing_since = now
+        self.detection_misses += 1
+        self.gestures.hits = 0  # Consecutive positive samples must remain real.
+        if self.detection_misses > 2 or now - self.detection_missing_since > 1.0:
+            self.gestures.reset_action()
+
+    def resume_detection(self):
+        self.detection_missing_since = None
+        self.detection_misses = 0
+
     def result(self, feedback, metrics=None):
-        result = {**self.gestures.public(), 'done': False, 'feedback': feedback,
-                  'metrics': metrics, 'frames': self.sequence, 'selfie_seq': self.selfie_seq,
-                  'pad_probability': self.pad_min, 'continuity': [self.cosine_min],
-                  'rules': self.rules, 'stream': True, 'mode': 'real'}
-        result['live'] = {'passed': result['passed'], 'challenges': result['completed'],
-                          'model': 'PIPNet 68 / ONNX CPU', 'mode': 'real'}
-        result['reason'] = 'Gerakan dan anti-spoof terpenuhi.' if result['passed'] else 'Ikuti instruksi gerakan di kamera.'
-        result['done'] = result['passed']
+        result = {
+            **self.gestures.public(),
+            "done": False,
+            "feedback": feedback,
+            "metrics": metrics,
+            "frames": self.sequence,
+            "selfie_seq": self.selfie_seq,
+            "pad_probability": self.pad_min,
+            "continuity": [self.cosine_min],
+            "rules": self.rules,
+            "stream": True,
+            "mode": "real",
+        }
+        result["live"] = {
+            "passed": result["passed"],
+            "challenges": result["completed"],
+            "model": "PIPNet 68 / ONNX CPU",
+            "mode": "real",
+        }
+        result["reason"] = (
+            "Gerakan dan anti-spoof terpenuhi."
+            if result["passed"]
+            else "Ikuti instruksi gerakan di kamera."
+        )
+        result["done"] = result["passed"]
         return result

@@ -192,7 +192,9 @@ def test_auto_synthetic_report_bound_to_server_identity_and_idempotent(
     assert issued.json()["state"] == "SLIK_READY"
     report = client.get("/api/applications/" + app["id"] + "/slik").json()
     assert report["report"]["label"] == DEMO_MARKER and report["report"]["synthetic"]
-    assert report["report"]["subject_nik"] == "0000000000000000"
+    assert report["report"]["subject_nik"] == "1234567890123456"
+    assert report["report"]["subject_name"] == "PEMOHON DEMO"
+    assert report["report"]["debtor"]["birth"] == "1990-01-01"
     assert report["request_subject"]["name"] == "PEMOHON DEMO"
     first = report["report"]["reference"]
     client.post("/api/applications/" + app["id"] + "/slik")
@@ -892,7 +894,8 @@ def test_auto_admission_races_last_slot_and_skips_weekend(client, face_image):
 
 def test_synthetic_report_sections_and_twelve_month_history():
     report = MockSlikAdapter().fetch(
-        {"nik": "private", "name": "PRIVATE"}, "SLIK-DEMO-TEST"
+        {"nik": "0000000000000000", "name": "PEMOHON FIXTURE", "birth": "1990-01-01"},
+        "SLIK-DEMO-TEST",
     )
     assert report["synthetic"] and report["label"] == DEMO_MARKER
     assert report["debtor"]["type"] == "Perseorangan"

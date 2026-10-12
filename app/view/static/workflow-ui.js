@@ -29,13 +29,13 @@ const approvedStates = [
 const keyForAction = () => crypto.randomUUID();
 function accountView() {
   if (principal)
-    return `<section class="public-form-panel"><h1>Akun petugas</h1><p>${esc(principal.login)} · ${esc(principal.role)}</p><button class="button primary" data-page="requests">Permohonan saya</button><button class="button" data-logout>Keluar</button></section>`;
+    return `<section class="public-form-panel"><h1>Akun petugas</h1><p>${esc(principal.login)} · ${esc(principal.role)}</p><button class="button primary" data-page="${principal.role === "admin" ? "dashboard" : "queue"}">Workspace petugas</button><button class="button" data-logout>Keluar</button></section>`;
   return `<section class="public-form-panel"><span class="home-kicker">AKSES DEMO LOKAL</span><h1>Masuk sebagai petugas</h1><p>Halaman ini untuk helpdesk dan administrator. Pemohon langsung memilih Pendaftaran tanpa login.</p><form id="account-form"><div class="field"><label for="account-login">Nama akun</label><input id="account-login" name="login" autocomplete="username" required minlength="3" maxlength="80"></div><div class="field"><label for="account-password">Kata sandi</label><input id="account-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button class="button primary" name="action" value="login">Masuk</button></div></form><p class="state-note">Akun helpdesk/administrator dibuat melalui perintah administrator di terminal. Email bukan kanal pengiriman hasil pada demo ini.</p></section>`;
 }
 function applicationPanel(app, operator = false) {
   const routing = app.routing || {};
   const manual = app.state === "MANUAL_PENDING";
-  return `<section class="panel config-panel application-panel"><div class="panel-head"><div><small>${esc(app.id)} · bukti versi ${app.capture_revision}</small><h2>${esc(stateLabels[app.state] || app.state)}</h2></div><span class="badge ${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? "orange" : "blue"}">${esc(app.state)}</span></div><p>${esc(app.reason || "Ikuti langkah verifikasi untuk melanjutkan permohonan.")}</p>${typeof routing.routing_score === "number" ? `<div class="routing-score"><strong>${(Math.floor(routing.routing_score * 100) / 100).toFixed(2)}<small>/100</small></strong><span>Skor routing ${routing.calibrated ? "terkalibrasi" : "heuristik demo"}<br>Bukan persentase kepastian identitas. Tampilan dipotong dua desimal; keputusan memakai nilai asli.</span></div>` : ""}<p class="simulation-note">Identitas resmi: ${app.identity_verified ? "terverifikasi oleh prosedur berwenang" : "belum terverifikasi"}. Demo hanya menghasilkan data sintetis.</p>${manual ? `<div class="callout">${esc(app.manual_admission?.message || "Kuota hari ini akan diperiksa otomatis menggunakan bukti yang sudah diambil.")}${app.manual_admission?.next_working_day ? `<br>Hari kerja berikutnya: ${esc(app.manual_admission.next_working_day)}. Ketersediaan diperiksa kembali saat mencoba; belum ada slot yang dipesan.` : ""}</div>` : ""}${app.reservation ? `<div class="callout">Kasus ${esc(app.reservation.case_id)} · ${esc(app.reservation.day)} · ${esc(app.reservation.window)} WIB<br>Status ${esc(app.reservation.state)}</div>` : ""}${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? `<p class="callout">${routing.security_review ? "Pemeriksaan memberi sinyal risiko keamanan. Ini bukan bukti pasti penipuan. " : ""}${esc(app.appeal)}</p>` : ""}${
+  return `<section class="panel config-panel application-panel"><div class="panel-head"><div><small>${esc(app.id)} · bukti versi ${app.capture_revision}</small><h2>${esc(stateLabels[app.state] || app.state)}</h2></div><span class="badge ${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? "orange" : "blue"}">${esc(app.state)}</span></div><p>${esc(app.state === "SLIK_READY" ? "Verifikasi disetujui. PDF SLIK demo diunduh otomatis. Jika browser menahan unduhan, gunakan tombol unduh ulang." : app.reason || "Ikuti langkah verifikasi untuk melanjutkan permohonan.")}</p>${typeof routing.routing_score === "number" ? `<div class="routing-score"><strong>${(Math.floor(routing.routing_score * 100) / 100).toFixed(2)}<small>/100</small></strong><span>Skor routing ${routing.calibrated ? "terkalibrasi" : "heuristik demo"}<br>Bukan persentase kepastian identitas. Tampilan dipotong dua desimal; keputusan memakai nilai asli.</span></div>` : ""}<p class="simulation-note">Identitas resmi: ${app.identity_verified ? "terverifikasi oleh prosedur berwenang" : "belum terverifikasi"}. Identitas laporan mengikuti data KTP server; data keuangannya acak sintetis.</p>${manual ? `<div class="callout">${esc(app.manual_admission?.message || "Kuota hari ini akan diperiksa otomatis menggunakan bukti yang sudah diambil.")}${app.manual_admission?.next_working_day ? `<br>Hari kerja berikutnya: ${esc(app.manual_admission.next_working_day)}. Ketersediaan diperiksa kembali saat mencoba; belum ada slot yang dipesan.` : ""}</div>` : ""}${app.reservation ? `<div class="callout">Kasus ${esc(app.reservation.case_id)} · ${esc(app.reservation.day)} · ${esc(app.reservation.window)} WIB<br>Status ${esc(app.reservation.state)}</div><p>Halaman ini memeriksa status otomatis. PDF diunduh setelah pemeriksaan disetujui. Simpan nomor permohonan untuk mengecek melalui Status layanan pada browser yang sama.</p>` : ""}${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? `<p class="callout">${routing.security_review ? "Pemeriksaan memberi sinyal risiko keamanan. Ini bukan bukti pasti penipuan. " : ""}${esc(app.appeal)}</p>` : ""}${
     operator
       ? `<div class="result-controls">${Object.entries(routing.mandatory || {})
           .map(
@@ -60,10 +60,10 @@ function applicationPanel(app, operator = false) {
           )
           .join("")}</div>`
       : ""
-  }<div class="buttons">${app.review_note_evidence ? `<button class="button" data-evidence="${esc(app.review_note_evidence)}">Lihat catatan helpdesk</button>` : ""}${!operator && manual ? `<button class="button primary" data-try-today="${app.id}">Cek kuota hari ini lagi</button>` : ""}${!operator && app.state === "MANUAL_SCHEDULED" ? `<button class="button" data-cancel-case="${app.id}">Batalkan reservasi</button>` : ""}${!operator && approvedStates.includes(app.state) ? `<button class="button primary" data-slik="${app.id}">${app.state === "SLIK_READY" ? "Lihat hasil SLIK demo" : app.state === "SLIK_PENDING" ? "Periksa / coba penarikan kembali" : "Ambil hasil SLIK demo"}</button><button class="button" data-persistent-registration="${app.id}">Lengkapi pendaftaran demo</button>` : ""}${!operator && ["CAPTURE_RETRY", "TECHNICAL_PENDING", "VERIFYING"].includes(app.state) && !flow ? `<button class="button primary" data-resume-capture="${app.id}">Lanjutkan capture baru</button>` : ""}${operator && principal?.role === "helpdesk" && app.state === "MANUAL_SCHEDULED" ? `<button class="button primary" data-start-review="${app.id}">Mulai pemeriksaan</button>` : ""}</div>${operator && principal?.role === "helpdesk" && app.state === "MANUAL_IN_REVIEW" ? `<form id="manual-review-form" data-id="${app.id}" data-revision="${app.capture_revision}"><div class="field"><label for="manual-note">Dasar keputusan dan catatan pemeriksaan</label><textarea id="manual-note" name="note" required minlength="10" maxlength="1000"></textarea></div><label class="scenario"><input type="checkbox" name="identity_review"> Saya memeriksa bukti identitas dengan prosedur manual demo (bukan validasi Dukcapil).</label><label class="scenario"><input type="checkbox" name="authority_review"> Saya memeriksa pernyataan dan kewenangan pemohon untuk identitas yang diminta.</label><div class="buttons"><button class="button primary" name="decision" value="approve">Setujui untuk hasil sintetis</button><button class="button danger" name="decision" value="reject">Tolak permohonan ini</button><button class="button" name="decision" value="repair">Minta perbaikan</button></div><p class="text-error" id="step-error" role="alert"></p></form>` : ""}</section>`;
+  }<div class="buttons">${app.review_note_evidence ? `<button class="button" data-evidence="${esc(app.review_note_evidence)}">Lihat catatan helpdesk</button>` : ""}${!operator && manual ? `<button class="button primary" data-try-today="${app.id}">Cek kuota hari ini lagi</button>` : ""}${!operator && app.state === "MANUAL_SCHEDULED" ? `<button class="button" data-cancel-case="${app.id}">Batalkan reservasi</button>` : ""}${!operator && approvedStates.includes(app.state) ? `<button class="button primary" data-slik="${app.id}">${app.state === "SLIK_READY" ? "Unduh ulang PDF SLIK demo" : "Coba siapkan PDF kembali"}</button>` : ""}${!operator && ["CAPTURE_RETRY", "TECHNICAL_PENDING", "VERIFYING"].includes(app.state) && (!flow || page === "result") ? `<button class="button primary" data-resume-capture="${app.id}">Lanjutkan capture baru</button>` : ""}${operator && principal?.role === "helpdesk" && app.state === "MANUAL_SCHEDULED" ? `<button class="button primary" data-start-review="${app.id}">Mulai pemeriksaan</button>` : ""}</div>${operator && principal?.role === "helpdesk" && app.state === "MANUAL_IN_REVIEW" ? `<form id="manual-review-form" data-id="${app.id}" data-revision="${app.capture_revision}"><div class="field"><label for="manual-note">Dasar keputusan dan catatan pemeriksaan</label><textarea id="manual-note" name="note" required minlength="10" maxlength="1000"></textarea></div><label class="scenario"><input type="checkbox" name="identity_review"> Saya memeriksa bukti identitas dengan prosedur manual demo (bukan validasi Dukcapil).</label><label class="scenario"><input type="checkbox" name="authority_review"> Saya memeriksa pernyataan dan kewenangan pemohon untuk identitas yang diminta.</label><div class="buttons"><button class="button primary" name="decision" value="approve">Setujui untuk hasil sintetis</button><button class="button danger" name="decision" value="reject">Tolak permohonan ini</button><button class="button" name="decision" value="repair">Minta perbaikan</button></div><p class="text-error" id="step-error" role="alert"></p></form>` : ""}</section>`;
 }
-function requestsView() {
-  return `${head("Permohonan saya", "Permohonan tersimpan untuk browser ini tanpa login. Gunakan browser yang sama untuk memeriksa status.", `<button class="button primary" data-page="registration">Permohonan baru</button>`, "STATUS PERMOHONAN")}<div class="application-list">${applicationRows.map((app) => `<button class="application-row" data-application="${app.id}"><div><strong>${esc(app.name || "Permohonan baru")}</strong><small>${esc(app.id)} · ${date(app.updated)}</small></div><span class="badge blue">${esc(stateLabels[app.state] || app.state)}</span></button>`).join("") || '<section class="public-form-panel"><p>Belum ada permohonan pada browser ini.</p></section>'}</div>${selectedApplication ? applicationPanel(selectedApplication, principal?.role !== "applicant") : ""}`;
+function deliveryView() {
+  return `${head("Hasil verifikasi", "PDF SLIK demo diunduh otomatis setelah keputusan disetujui dan laporan tersedia.", "", "HASIL PENDAFTARAN")}${selectedApplication ? applicationPanel(selectedApplication) : '<section class="public-form-panel"><p>Belum ada hasil aktif. Mulai melalui Pendaftaran atau masukkan nomor permohonan pada Status layanan.</p><button class="button primary" data-page="registration">Pendaftaran</button></section>'}`;
 }
 function operatorQueueView() {
   const rows = applicationRows.filter(
@@ -107,9 +107,11 @@ function adminMetricsView() {
 }
 async function showApplication(id) {
   selectedApplication = await api("/applications/" + id);
-  page = ["helpdesk", "admin"].includes(principal?.role) ? "queue" : "requests";
+  page = ["helpdesk", "admin"].includes(principal?.role) ? "queue" : "result";
   history.replaceState(null, "", "#" + page);
   render();
+  if (principal?.role === "applicant")
+    await observeDelivery(selectedApplication);
 }
 async function showCapacityConfig() {
   const c = await api("/policy/capacity");
@@ -132,121 +134,119 @@ async function showCapacityConfig() {
       )}<div class="field wide"><label for="config-workdays">Hari kerja (0=Senin, 6=Minggu)</label><input id="config-workdays" name="workdays" value="${c.workdays.join(",")}" required></div><div class="field wide"><label for="config-holidays">Hari libur (YYYY-MM-DD, pisahkan koma)</label><input id="config-holidays" name="holidays" value="${c.holidays.join(",")}"></div><div class="field wide"><label for="config-label">Label kebijakan</label><input id="config-label" name="label" value="${esc(c.label)}" required></div></div><p>Timezone: Asia/Jakarta. Contoh demo, bukan SOP resmi OJK.</p><button class="button primary">Simpan kebijakan</button><p class="text-error" id="modal-error" role="alert"></p></form>`,
   );
 }
-function syntheticReportView(result) {
-  const r = result.report;
-  const money = (v) =>
-    new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(v);
-  const fields = (pairs) =>
-    `<dl class="slik-fields">${pairs.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v ?? "—")}</dd></div>`).join("")}</dl>`;
-  const summary = r.summary || {
-    total_limit: r.facilities.reduce((n, f) => n + f.limit, 0),
-    total_outstanding: r.facilities.reduce((n, f) => n + f.outstanding, 0),
-    creditors: r.facilities.length,
-  };
-  return `<article class="slik-report"><div class="demo-report-marker">DEMO — BUKAN INFORMASI DEBITUR RESMI</div><header class="slik-report-header"><span class="home-kicker">LAPORAN SINTETIS</span><h2>Informasi Debitur</h2><p>Contoh susunan laporan SLIK untuk debitur perseorangan.</p></header><p class="callout">Data contoh tidak menggambarkan kondisi keuangan pemohon dan tidak berasal dari layanan SLIK OJK.</p><p>Permohonan milik <strong>${esc(result.request_subject.name)}</strong> · ${esc(result.request_subject.nik_masked)}. Subjek pada contoh laporan: <strong>${esc(r.subject_name)}</strong>.</p><section><h3>Informasi pencarian</h3>${fields(
-    [
-      ["Nomor laporan demo", r.reference],
-      ["Kata kunci pencarian", "NIK " + r.subject_nik],
-      [
-        "Tanggal permintaan",
-        r.search?.requested_at ? date(r.search.requested_at) : "—",
-      ],
-      ["Posisi data contoh", r.search?.last_position || "—"],
-    ],
-  )}</section><section><h3>Data pokok debitur</h3>${fields([
-    ["Jenis debitur", r.debtor?.type || "Perseorangan"],
-    ["Nama debitur", r.subject_name],
-    ["NIK sintetis", r.subject_nik],
-    [
-      "Tempat / tanggal lahir",
-      r.debtor ? r.debtor.birthplace + " / " + r.debtor.birth : "—",
-    ],
-    ["Alamat contoh", r.debtor?.address],
-    ["Pekerjaan contoh", r.debtor?.occupation],
-  ])}<p class="state-note">Pelapor contoh: ${esc(r.debtor?.reporters?.join(" · ") || "—")}.</p></section><section><h3>Ringkasan fasilitas</h3><div class="slik-totals">${fields(
-    [
-      ["Plafon efektif", money(summary.total_limit)],
-      ["Baki debet", money(summary.total_outstanding)],
-      ["Jumlah kreditur", summary.creditors],
-      [
-        "Kualitas terburuk / bulan",
-        summary.worst_quality
-          ? summary.worst_quality + " / " + summary.worst_month
-          : "—",
-      ],
-    ],
-  )}</div><p class="state-note">Baki debet adalah sisa pokok pinjaman, di luar bunga dan denda.</p></section>${r.facilities
-    .map(
-      (f, i) =>
-        `<section class="slik-facility"><h3>Kredit / pembiayaan ${i + 1}</h3>${fields(
-          [
-            ["Pelapor", f.creditor],
-            ["Cabang", f.branch],
-            ["Nomor rekening contoh", f.account],
-            ["Nomor akad", f.contract],
-            [
-              "Jenis / penggunaan",
-              [f.type, f.usage].filter(Boolean).join(" / "),
-            ],
-            ["Kondisi fasilitas", f.condition],
-            [
-              "Tanggal mulai / jatuh tempo",
-              [f.started, f.maturity].filter(Boolean).join(" / "),
-            ],
-            ["Tanggal update", f.updated],
-            ["Plafon", money(f.limit)],
-            ["Baki debet", money(f.outstanding)],
-            ["Kualitas", f.collectibility],
-            [
-              "Suku bunga contoh",
-              f.interest_percent == null ? "—" : f.interest_percent + "%",
-            ],
-            [
-              "Tunggakan pokok / bunga",
-              f.principal_arrears == null
-                ? "—"
-                : money(f.principal_arrears) +
-                  " / " +
-                  money(f.interest_arrears),
-            ],
-            ["Jumlah hari tunggakan", f.arrears_days],
-          ],
-        )}<h4>Riwayat kualitas / hari tunggakan 12 bulan</h4><div class="slik-table-scroll" tabindex="0" role="region" aria-label="Riwayat fasilitas ${i + 1}"><table class="slik-history"><thead><tr><th scope="col">Bulan</th>${(f.history || []).map((h) => `<th scope="col">${esc(h.month)}</th>`).join("")}</tr></thead><tbody><tr><th scope="row">Kualitas</th>${(f.history || []).map((h) => `<td class="${h.quality > 1 ? "quality-attention" : ""}">${h.quality}</td>`).join("")}</tr><tr><th scope="row">Hari tunggakan</th>${(f.history || []).map((h) => `<td>${h.arrears_days}</td>`).join("")}</tr></tbody></table></div><h4>Agunan</h4>${
-          f.collateral?.length
-            ? f.collateral
-                .map((c) =>
-                  fields([
-                    ["Jenis / nomor", c.type + " / " + c.reference],
-                    ["Nilai agunan contoh", money(c.value)],
-                    ["Pemilik contoh", c.owner],
-                    ["Tanggal penilaian", c.valuation_date],
-                    ["Paripasu", c.shared ? "Ya" : "Tidak"],
-                  ]),
-                )
-                .join("")
-            : "<p>Tidak ada agunan pada fasilitas contoh ini.</p>"
-        }<h4>Penjamin</h4>${
-          f.guarantors?.length
-            ? f.guarantors
-                .map((g) =>
-                  fields([
-                    ["Nama contoh", g.name],
-                    ["Identitas contoh", g.identity],
-                    ["Golongan", g.type],
-                    ["Tanggal update", g.updated],
-                  ]),
-                )
-                .join("")
-            : "<p>Tidak ada penjamin pada fasilitas contoh ini.</p>"
-        }</section>`,
+let deliveryTimer = null;
+let deliveryWatchEpoch = 0;
+function rememberApplication(id) {
+  try {
+    sessionStorage.setItem("mock_id_active_application", id);
+  } catch {}
+}
+function stopDeliveryWatch() {
+  clearTimeout(deliveryTimer);
+  deliveryTimer = null;
+  deliveryWatchEpoch++;
+}
+async function fetchReportPdf(app) {
+  const epoch = authEpoch,
+    generation = deliveryWatchEpoch;
+  const response = await fetch(
+    `/api/applications/${encodeURIComponent(app.id)}/slik.pdf`,
+    {
+      credentials: "same-origin",
+      headers: { "X-Local-Client": "mock-id", "X-Workspace-Mode": "public" },
+    },
+  );
+  if (!response.ok) return readApiResponse(response);
+  const blob = await response.blob();
+  if (epoch !== authEpoch || generation !== deliveryWatchEpoch)
+    throw new Error("Kepemilikan browser berubah; unduhan lama diabaikan.");
+  const magic = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+  if (
+    !response.headers.get("content-type")?.startsWith("application/pdf") ||
+    String.fromCharCode(...magic) !== "%PDF-"
+  )
+    throw new Error("Server belum mengirim dokumen PDF yang valid.");
+  return blob;
+}
+let deliveryStorage = null;
+try {
+  deliveryStorage = sessionStorage;
+} catch {}
+const reportDelivery = new ReportDelivery({
+  fetchPdf: fetchReportPdf,
+  storage: deliveryStorage,
+  savePdf: (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  },
+});
+async function deliverPdf(app, manual = false) {
+  try {
+    if (await reportDelivery.deliver(app, { manual }))
+      toast("PDF SLIK demo dikirim ke browser untuk diunduh.");
+  } catch (error) {
+    toast(error.message + " Gunakan tombol unduh kembali.");
+  }
+}
+async function observeDelivery(app) {
+  stopDeliveryWatch();
+  if (!app || principal?.role !== "applicant") return;
+  rememberApplication(app.id);
+  if (app.state === "SLIK_READY") {
+    await deliverPdf(app);
+    return;
+  }
+  if (
+    ![
+      "MANUAL_PENDING",
+      "MANUAL_SCHEDULED",
+      "MANUAL_IN_REVIEW",
+      "SLIK_PENDING",
+    ].includes(app.state)
+  )
+    return;
+  const generation = deliveryWatchEpoch,
+    ownerEpoch = authEpoch;
+  const poll = async () => {
+    if (
+      generation !== deliveryWatchEpoch ||
+      ownerEpoch !== authEpoch ||
+      !["verify", "result"].includes(page)
     )
-    .join(
-      "",
-    )}<section class="slik-legend"><h3>Arti kode kualitas kredit</h3><p>1 — Lancar · 2 — Dalam Perhatian Khusus · 3 — Kurang Lancar · 4 — Diragukan · 5 — Macet.</p><p class="state-note">Seluruh nominal dan identitas dalam laporan ini merupakan contoh sintetis.</p></section><footer>${esc(r.label)}</footer></article><div class="buttons slik-report-actions"><button class="button" data-print-report>Cetak / simpan PDF</button><button class="button primary" data-close>Tutup hasil</button></div>`;
+      return;
+    try {
+      const fresh = await api("/applications/" + app.id);
+      if (generation !== deliveryWatchEpoch || ownerEpoch !== authEpoch) return;
+      selectedApplication = fresh;
+      if (flow?.result?.application?.id === app.id)
+        flow.result.application = fresh;
+      render();
+      if (fresh.state === "SLIK_READY") {
+        await deliverPdf(fresh);
+        return;
+      }
+      if (
+        ![
+          "MANUAL_PENDING",
+          "MANUAL_SCHEDULED",
+          "MANUAL_IN_REVIEW",
+          "SLIK_PENDING",
+        ].includes(fresh.state)
+      )
+        return;
+    } catch (error) {
+      if ([401, 403, 404, 410].includes(error.status)) return;
+    }
+    if (generation === deliveryWatchEpoch)
+      deliveryTimer = setTimeout(poll, 5000);
+  };
+  deliveryTimer = setTimeout(poll, 5000);
 }
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
@@ -255,6 +255,7 @@ document.addEventListener("click", async (event) => {
     if (button.hasAttribute("data-logout")) {
       await api("/auth/logout", { method: "POST" });
       authEpoch++;
+      stopDeliveryWatch();
       stopCamera();
       $("#modal").close();
       releasePreviews();
@@ -298,17 +299,17 @@ document.addEventListener("click", async (event) => {
       await showApplication(button.dataset.startReview);
     } else if (button.dataset.slik) {
       const id = button.dataset.slik;
-      const app = await api("/applications/" + id);
+      let app = await api("/applications/" + id);
       if (app.state !== "SLIK_READY")
-        await api("/applications/" + id + "/slik", { method: "POST" });
-      await reloadWorkspace();
-      await showApplication(id);
-      if (selectedApplication.state === "SLIK_READY") {
-        const result = await api("/applications/" + id + "/slik");
-        modal("Hasil SLIK sintetis", syntheticReportView(result));
-      }
-    } else if (button.hasAttribute("data-print-report")) {
-      window.print();
+        app = await api("/applications/" + id + "/slik", { method: "POST" });
+      selectedApplication = app;
+      rememberApplication(id);
+      page = "result";
+      history.replaceState(null, "", "#result");
+      render();
+      stopDeliveryWatch();
+      if (app.state === "SLIK_READY") await deliverPdf(app, true);
+      else await observeDelivery(app);
     } else if (button.dataset.evidence) {
       const evidence = await api("/evidence/" + button.dataset.evidence);
       modal(
@@ -369,7 +370,7 @@ document.addEventListener("submit", async (event) => {
           ? "queue"
           : principal.role === "admin"
             ? "dashboard"
-            : "requests",
+            : "home",
       );
     } else if (form.id === "manual-booking-form") {
       await api(

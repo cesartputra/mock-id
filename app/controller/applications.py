@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from app.services.auth import actor, roles
 from app.services.workflow import JAKARTA
+from app.services.slik_pdf import SlikPdfService
 
 router = APIRouter(prefix="/api")
 
@@ -174,6 +175,40 @@ def issue(application_id: str, request: Request):
 @router.get("/applications/{application_id}/slik")
 def report(application_id: str, request: Request):
     return request.app.state.slik.report(application_id, actor(request))
+
+
+@router.get("/applications/{application_id}/slik.pdf")
+def download_report(application_id: str, request: Request):
+    who = actor(request)
+    request.app.state.auth.limit("pdf-download:" + who["id"], 30, 3600)
+    slik = request.app.state.slik
+    result = slik.report(application_id, who)
+    content = SlikPdfService().render(result)
+    # Rendering must not publish a decision revoked or expired meanwhile.
+    with slik.repository.connect() as con:
+        current = slik.flow.get(con, application_id)
+        slik.authorize(con, current, who)
+        if (
+            current["revision"] != result["revision"]
+            or current["state"] != "SLIK_READY"
+        ):
+            raise HTTPException(409, "Keputusan berubah. PDF lama tidak dapat diunduh.")
+    slik.repository.audit(
+        "PDF SLIK demo diunduh",
+        "Actor " + who["id"] + "; revision " + str(result["revision"]),
+        application_id,
+    )
+    import re
+
+    filename = "slik-demo-" + re.sub(r"[^A-Za-z0-9-]", "", current["id"]) + ".pdf"
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="' + filename + '"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/integration/handoff")

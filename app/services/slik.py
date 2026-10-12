@@ -4,6 +4,10 @@ import json
 import os
 import time
 import uuid
+import random
+import hashlib
+import re
+from datetime import datetime, timezone
 from fastapi import HTTPException
 
 DEMO_MARKER = "DEMO — BUKAN INFORMASI DEBITUR RESMI"
@@ -16,117 +20,147 @@ class SlikServiceAdapter:
 
 class MockSlikAdapter(SlikServiceAdapter):
     def fetch(self, identity, idempotency_key):
-        # All financial values and names below are fixed synthetic demonstration
-        # data, never claims about the verified person's financial history.
-        facilities = [
-            {
-                "creditor": "BANK CONTOH DEMO",
-                "branch": "CABANG DEMO JAKARTA",
-                "account": "DEMO-REK-001",
-                "limit": 10000000,
-                "outstanding": 2500000,
-                "collectibility": "1 - Lancar",
-                "quality": 1,
-                "type": "Kredit konsumsi",
-                "usage": "Konsumsi",
-                "contract": "DEMO-AKAD-001",
-                "started": "2025-01-01",
-                "maturity": "2027-01-01",
-                "interest_percent": 10.0,
-                "principal_arrears": 0,
-                "interest_arrears": 0,
-                "arrears_days": 0,
-                "condition": "Aktif",
-                "updated": "2026-09-30",
-                "history": [
+        # Identity comes from authorized server evidence. Only financial demo
+        # data is pseudorandom, stable for the same downstream issuance ID.
+        if (
+            not identity.get("name")
+            or not re.fullmatch(r"[0-9]{16}", identity.get("nik", ""))
+            or not identity.get("birth")
+        ):
+            raise ValueError("Identitas server lengkap diperlukan untuk laporan demo.")
+        rng = random.Random(
+            int.from_bytes(
+                hashlib.sha256(
+                    ("synthetic-credit-v3:" + idempotency_key).encode()
+                ).digest(),
+                "big",
+            )
+        )
+        labels = {
+            1: "Lancar",
+            2: "Dalam Perhatian Khusus",
+            3: "Kurang Lancar",
+            4: "Diragukan",
+            5: "Macet",
+        }
+        creditors = rng.sample(
+            [
+                "BANK DEMO NUSANTARA",
+                "BANK DEMO SENTOSA",
+                "BANK DEMO SEJAHTERA",
+                "PEMBIAYAAN DEMO MAKMUR",
+            ],
+            rng.randint(1, 3),
+        )
+        facilities = []
+        for i, creditor in enumerate(creditors, 1):
+            limit = rng.randrange(10, 201) * 500000
+            outstanding = rng.randrange(0, int(limit / 100000) + 1) * 100000
+            history = []
+            for month in [
+                "2025-10",
+                "2025-11",
+                "2025-12",
+                "2026-01",
+                "2026-02",
+                "2026-03",
+                "2026-04",
+                "2026-05",
+                "2026-06",
+                "2026-07",
+                "2026-08",
+                "2026-09",
+            ]:
+                quality = rng.choices([1, 2, 3, 4, 5], weights=[75, 15, 5, 3, 2])[0]
+                ranges = {
+                    1: (0, 0),
+                    2: (1, 90),
+                    3: (91, 120),
+                    4: (121, 180),
+                    5: (181, 240),
+                }
+                history.append(
                     {
-                        "month": f"2025-{m:02d}" if m >= 10 else f"2026-{m:02d}",
-                        "quality": 1,
-                        "arrears_days": 0,
+                        "month": month,
+                        "quality": quality,
+                        "arrears_days": rng.randint(*ranges[quality]),
                     }
-                    for m in [10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-                ],
-                "collateral": [
-                    {
-                        "type": "Kendaraan contoh",
-                        "reference": "DEMO-AGN-001",
-                        "value": 5000000,
-                        "owner": "DEBITUR SINTETIS",
-                        "valuation_date": "2026-09-30",
-                        "shared": False,
-                    }
-                ],
-                "guarantors": [],
-            },
-            {
-                "creditor": "LEMBAGA PEMBIAYAAN CONTOH",
-                "branch": "CABANG DEMO",
-                "account": "DEMO-REK-002",
-                "limit": 20000000,
-                "outstanding": 8000000,
-                "collectibility": "1 - Lancar",
-                "quality": 1,
-                "type": "Pembiayaan konsumsi",
-                "usage": "Konsumsi",
-                "contract": "DEMO-AKAD-002",
-                "started": "2025-06-01",
-                "maturity": "2028-06-01",
-                "interest_percent": 8.0,
-                "principal_arrears": 0,
-                "interest_arrears": 0,
-                "arrears_days": 0,
-                "condition": "Aktif",
-                "updated": "2026-09-30",
-                "history": [
-                    {
-                        "month": f"2025-{m:02d}" if m >= 10 else f"2026-{m:02d}",
-                        "quality": 2 if m == 7 else 1,
-                        "arrears_days": 30 if m == 7 else 0,
-                    }
-                    for m in [10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-                ],
-                "collateral": [],
-                "guarantors": [
-                    {
-                        "name": "PENJAMIN SINTETIS",
-                        "identity": "DEMO-PENJAMIN-001",
-                        "type": "Perseorangan contoh",
-                        "updated": "2026-09-30",
-                    }
-                ],
-            },
-        ]
+                )
+            quality = history[-1]["quality"] if outstanding else 1
+            if not outstanding:
+                history[-1].update(quality=1, arrears_days=0)
+            facilities.append(
+                {
+                    "creditor": creditor,
+                    "branch": "CABANG DEMO",
+                    "account": f"DEMO-REK-{rng.randrange(100000,999999)}",
+                    "contract": f"DEMO-AKAD-{rng.randrange(100000,999999)}",
+                    "limit": limit,
+                    "outstanding": outstanding,
+                    "quality": quality,
+                    "collectibility": f"{quality} - {labels[quality]}",
+                    "type": rng.choice(
+                        [
+                            "Kredit konsumsi",
+                            "Kredit modal kerja",
+                            "Pembiayaan kendaraan",
+                        ]
+                    ),
+                    "usage": "Contoh pembiayaan sintetis",
+                    "started": f"2024-{rng.randint(1,12):02d}-01",
+                    "maturity": f"2028-{rng.randint(1,12):02d}-01",
+                    "interest_percent": round(rng.uniform(6, 18), 1),
+                    "principal_arrears": (
+                        min(outstanding, rng.randint(1, 5) * 100000)
+                        if quality > 1
+                        else 0
+                    ),
+                    "interest_arrears": (
+                        rng.randint(1, 10) * 10000 if quality > 1 else 0
+                    ),
+                    "arrears_days": history[-1]["arrears_days"],
+                    "condition": "Aktif" if outstanding else "Lunas",
+                    "updated": "2026-09-30",
+                    "history": history,
+                    "collateral": [],
+                    "guarantors": [],
+                }
+            )
+        worst = max(
+            (h for f in facilities for h in f["history"]),
+            key=lambda h: (h["quality"], h["month"]),
+        )
         return {
             "label": DEMO_MARKER,
             "synthetic": True,
-            "schema_version": "slik-demo-v2",
+            "financial_data_synthetic": True,
+            "identity_source": "authorized_server_capture",
+            "schema_version": "slik-demo-v3",
             "reference": idempotency_key,
-            "subject_name": "DEBITUR SINTETIS",
-            "subject_nik": "0000000000000000",
+            "subject_name": identity["name"],
+            "subject_nik": identity["nik"],
             "search": {
                 "identity_type": "NIK",
-                "identity": "0000000000000000",
-                "last_position": "September 2026",
-                "requested_at": __import__("datetime")
-                .datetime.now(__import__("datetime").timezone.utc)
-                .isoformat(),
+                "identity": identity["nik"],
+                "last_position": "September 2026 (data keuangan contoh)",
+                "requested_at": datetime.now(timezone.utc).isoformat(),
             },
             "debtor": {
                 "type": "Perseorangan",
-                "name": "DEBITUR SINTETIS",
-                "nik": "0000000000000000",
-                "birth": "1990-01-01",
-                "birthplace": "KOTA CONTOH",
-                "address": "JALAN DEMO NOMOR 1, KOTA CONTOH",
-                "occupation": "PEKERJA CONTOH",
-                "reporters": [f["creditor"] for f in facilities],
+                "name": identity["name"],
+                "nik": identity["nik"],
+                "birth": identity["birth"],
+                "birthplace": identity.get("birthplace", "-"),
+                "address": identity.get("address") or "-",
+                "occupation": identity.get("occupation", "-"),
+                "reporters": creditors,
             },
             "summary": {
                 "total_limit": sum(f["limit"] for f in facilities),
                 "total_outstanding": sum(f["outstanding"] for f in facilities),
                 "creditors": len(facilities),
-                "worst_quality": 2,
-                "worst_month": "2026-07",
+                "worst_quality": worst["quality"],
+                "worst_month": worst["month"],
                 "currency": "IDR",
             },
             "facilities": facilities,
@@ -274,6 +308,12 @@ class SlikService:
                 raise RuntimeError(
                     "Adapter demo harus mengembalikan laporan sintetis bertanda."
                 )
+            if self.flow.policy.mode == "demo" and (
+                report.get("subject_name") != identity["name"]
+                or report.get("subject_nik") != identity["nik"]
+                or report.get("debtor", {}).get("birth") != identity["birth"]
+            ):
+                raise RuntimeError("Identitas laporan berbeda dari bukti server.")
         except Exception:
             with self.repository.connect(write=True) as con:
                 con.execute(
@@ -332,10 +372,10 @@ class SlikService:
         return self.flow.public(app)
 
     def report(self, application_id, actor):
-        with self.repository.connect() as con:
+        with self.repository.connect(write=True) as con:
             app = self.flow.get(con, application_id)
             self.flow.authorize(con, app, actor)
-            self.authorize(con, app, actor)
+            identity = self.authorize(con, app, actor)
             row = con.execute(
                 "SELECT * FROM issuance WHERE application_id=? AND revision=? AND state='READY'",
                 (application_id, app["revision"]),
@@ -343,6 +383,23 @@ class SlikService:
             if app["state"] != "SLIK_READY" or not row:
                 raise HTTPException(409, "Hasil SLIK belum tersedia.")
             result = self.flow.box.open_json(row["report_ciphertext"], row["id"])
+            if (
+                self.flow.policy.mode == "demo"
+                and result["report"].get("schema_version") != "slik-demo-v3"
+            ):
+                result["report"] = MockSlikAdapter().fetch(identity, row["id"])
+                con.execute(
+                    "UPDATE issuance SET report_ciphertext=? WHERE id=?",
+                    (self.flow.box.seal_json(result, row["id"]), row["id"]),
+                )
+            if self.flow.policy.mode == "demo" and (
+                result["report"]["subject_name"] != identity["name"]
+                or result["report"]["subject_nik"] != identity["nik"]
+                or result["report"]["debtor"]["birth"] != identity["birth"]
+            ):
+                raise HTTPException(
+                    409, "Identitas laporan tidak sesuai bukti yang disetujui."
+                )
         self.repository.audit(
             "Hasil SLIK dilihat", "Actor " + actor["id"], application_id
         )

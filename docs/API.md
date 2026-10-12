@@ -20,6 +20,7 @@ OpenAPI aktual: `/openapi.json`, Swagger `/docs`. MVC: `app/model`, `app/view`, 
 | POST `/applications/{id}/manual/start` | Helpdesk; atomik menugaskan kasus kepada actor pada jadwal dan jam layanan |
 | POST `/applications/{id}/manual/review` | Helpdesk yang ditugaskan; body di bawah; revision harus tepat |
 | GET `/evidence/{id}` | Cookie/bearer, otorisasi pemilik/kasus, revision aktif, expiry, audit/no-store. Pemohon tidak memperoleh hasil model mentah/diagnostik. |
+| GET `/applications/{id}/slik.pdf` | Pemilik, keputusan/revisi/expiry/proof/authority/retensi valid; application/pdf attachment, no-store, 30 unduhan/jam. Identitas dari EvidenceStore, financial data sintetis acak tersimpan. Revalidasi setelah render menolak keputusan yang dibatalkan saat membuat PDF. |
 | POST `/applications/{id}/slik`, GET endpoint sama | Pemilik: request/retry issuance dan baca laporan; stable issuance ID terikat keputusan/revision |
 | POST `/registrations`, GET `/registrations/{id}` | Receipt mock lokal, milik sendiri. Perseorangan memerlukan keputusan persisten, canonical name/verification ID, bukan sesi aktif. Bukan penerbitan SLIK. Profil produksi menahan adapter receipt demo. |
 | GET `/workspace`, GET `/operator/metrics` | Workspace operator (helpdesk terfilter kasus), metrics admin; bukan public dataset |
@@ -93,3 +94,5 @@ Slot: key tetap saat retry payload sama, key baru untuk tindakan berbeda. Kasus 
 Endpoint legacy `/records/{id}/review|schedule` menolak dengan 409; status approved historis tanpa application/evidence tidak memberi akses hasil. Data SQLite lama dipertahankan, tidak diberi pemilik/otorisasi baru secara otomatis.
 
 Guest capability hanya mengotorisasi kepemilikan resource demo, bukan identitas hukum. Produksi tetap membutuhkan adapter/prosedur identitas, kewenangan dan kanal penerimaan yang disetujui; tidak otomatis sah karena guest cookie tersedia. Cookie tidak pernah dimasukkan URL atau localStorage.
+
+Frontend tidak membaca daftar seluruh applications pemohon sebagai menu; status permohonan tunggal ditemukan melalui APP ID + cookie pemilik. Auto download deduplicated per application/revision/issuance pada sessionStorage; storage gagal memakai memory fallback. Manual retry tidak mengabaikan server authorization.

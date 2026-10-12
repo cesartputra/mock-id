@@ -61,9 +61,14 @@ function camera(kind = "liveness") {
       face_box: [20, 20, 100, 100],
       image_size: [640, 480],
     }),
-    inspectAutoBlob: async () => {
-      throw new Error("Local quality should block auto-photo.");
-    },
+    inspectAutoBlob: async () => ({
+      ready: false,
+      complete: false,
+      context: kind,
+      warnings: [
+        { code: "document_quality", message: "Teks kartu belum fokus." },
+      ],
+    }),
     drawFaceDetection: (...args) => events.drawn.push(args),
     showCameraFeedback: (feedback) => events.feedback.push(feedback),
     recordChallenges: () => {
@@ -159,13 +164,13 @@ test("PAD review starts measured motion but keeps the warning and orange face bo
 });
 
 for (const kind of ["document", "holding"])
-  test(`${kind} still waits for local quality before auto-photo/server capture`, async () => {
+  test(`${kind} sends fresh frames for actual server ROI quality checks`, async () => {
     const { context, events } = camera(kind);
     await context.monitorCamera(7);
-    assert.equal(events.localChecks, 1);
-    assert.equal(events.sent.length, 0);
+    assert.equal(events.localChecks, 0);
+    assert.equal(events.sent.length, 1);
     assert.equal(events.starts, 0);
-    assert.match(context.$("#camera-feedback").textContent, /Blur/);
+    assert.equal(events.feedback[0].warnings[0].code, "document_quality");
   });
 
 function streamCamera({ passed = false, cancel = false } = {}) {

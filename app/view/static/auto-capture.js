@@ -21,11 +21,20 @@ class AutoCaptureGate {
       result.complete &&
       result.nik_readable &&
       typeof result.subject_key === "string" &&
+      (this.context !== "document" ||
+        (result.identity_ready &&
+          result.verified_frames >= 3 &&
+          typeof result.document_capture_token === "string")) &&
       (this.context !== "holding" ||
         (result.nik_matches && result.hand_detected));
     if (!valid) {
       this.reset();
       return false;
+    }
+    if (this.context === "document") {
+      // Three-frame consensus and the selected photo token are server-owned.
+      this.completed = true;
+      return true;
     }
     this.count =
       this.subject === result.subject_key &&

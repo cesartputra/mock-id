@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from app.config import DATA, DEFAULT_SETTINGS
+from app.services.face import FACE_MODEL_ID
 from app.model.database import Database
 from app.services.secrets_store import SecretBox
 from pathlib import Path
@@ -31,8 +32,23 @@ class Repository:
             )
             con.execute(
                 "INSERT INTO settings VALUES (1, ?) ON CONFLICT(id) DO NOTHING",
-                (json.dumps(DEFAULT_SETTINGS),),
+                (json.dumps({**DEFAULT_SETTINGS, "face_model": FACE_MODEL_ID}),),
             )
+
+            stored = json.loads(
+                con.execute("SELECT payload FROM settings WHERE id=1").fetchone()[
+                    "payload"
+                ]
+            )
+            if stored.get("face_model") != FACE_MODEL_ID:
+                # Old SFace threshold is not transferable to the new embedding space.
+                stored.update(
+                    face_model=FACE_MODEL_ID,
+                    face_cosine=DEFAULT_SETTINGS["face_cosine"],
+                )
+                con.execute(
+                    "UPDATE settings SET payload=? WHERE id=1", (json.dumps(stored),)
+                )
 
     @contextmanager
     def connect(self, write=False):
@@ -185,16 +201,18 @@ class Repository:
 
     def settings(self):
         with self.connect() as con:
-            return json.loads(
+            stored = json.loads(
                 con.execute("SELECT payload FROM settings WHERE id=1").fetchone()[
                     "payload"
                 ]
             )
+            return {key: stored[key] for key in DEFAULT_SETTINGS}
 
     def set_settings(self, settings):
         with self.lock, self.connect() as con:
             con.execute(
-                "UPDATE settings SET payload=? WHERE id=1", (json.dumps(settings),)
+                "UPDATE settings SET payload=? WHERE id=1",
+                (json.dumps({**settings, "face_model": FACE_MODEL_ID}),),
             )
         self.audit("Konfigurasi diperbarui", json.dumps(settings))
 

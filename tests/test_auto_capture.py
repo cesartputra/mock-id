@@ -17,7 +17,8 @@ def card_with_portrait(ktp_image, face_image):
 
 def test_actual_auto_document_requires_readable_nik_and_portrait(real_models, ktp_image, face_image):
     reading=real_models.inspect_auto_capture(card_with_portrait(ktp_image,face_image),'document')
-    assert reading['ready'] and reading['complete'],reading
+    assert reading['ready'] and not reading['complete'],reading
+    assert reading['_document_reading']['fields']['birth']=='1990-01-01'
     assert reading['nik_readable'] and reading['subject_key']
     assert not real_models.inspect_auto_capture(ktp_image,'document')['complete'] # no portrait
     assert not real_models.inspect_auto_capture(face_image,'document')['complete'] # no NIK
@@ -32,7 +33,8 @@ def test_actual_held_photo_without_readable_nik_never_auto_captures(real_models,
 def test_auto_endpoint_checks_prerequisites_and_does_not_consume_session(client,real_models,ktp_image,face_image,monkeypatch):
     # Test the throttle interval independently of CPU/OCR duration, which may
     # legitimately exceed 500 ms on a loaded machine.
-    monkeypatch.setattr('app.controller.verification.time', SimpleNamespace(monotonic=lambda: 100.0))
+    clock=[100.]
+    monkeypatch.setattr('app.controller.verification.time', SimpleNamespace(monotonic=lambda: clock[0]))
     verifier=client.app.state.verifier
     verifier.ocr=real_models.ocr;verifier.face=real_models.face
     public=client.post('/api/sessions').json();sid=public['id']
@@ -41,12 +43,21 @@ def test_auto_endpoint_checks_prerequisites_and_does_not_consume_session(client,
     assert client.post(route,data={'context':'holding'},files=file).status_code==422
     assert client.post(route,data={'context':'unknown'},files=file).status_code==422
     result=client.post(route,data={'context':'document'},files=file)
-    assert result.status_code==200 and result.json()['complete'],result.text
+    assert result.status_code==200 and not result.json()['complete'],result.text
     session=client.app.state.sessions.get(sid)
     assert session.document is None and not session.consumed and session.nonce==public['nonce']
     assert 'image_size' in result.json() and client.app.state.repository.results()==[]
     assert client.post(route,data={'context':'document'},files=file).status_code==429
-    assert client.post(f'/api/sessions/{sid}/document',files=file).status_code==200
+    for n in [1,2]:
+        clock[0]+=1.
+        image=card_with_portrait(ktp_image,face_image)
+        cv2.circle(image,(840,520),2,(n*50,30,30),-1)
+        file={'image':('camera.jpg',encoded(image),'image/jpeg')}
+        result=client.post(route,data={'context':'document'},files=file)
+        assert result.status_code==200,result.text
+    assert result.json()['complete'],result.text
+    token=result.json()['document_capture_token']
+    assert client.post(f'/api/sessions/{sid}/document',data={'capture_token':token},files=file).status_code==200
     assert session.document_result['fields']['nik']=='1234567890123456'
 
 

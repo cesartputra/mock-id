@@ -121,6 +121,8 @@ class SessionService:
             s.consumed = False
             s.nonce = secrets.token_urlsafe(32)
             s.last_preview = 0.0
+            s.document_consensus = None
+            s.document_probe = None
             s.last_result = None
             if stage == 'liveness' or not (s.liveness_result and s.liveness_result.get('passed')):
                 self.clear_liveness(s)

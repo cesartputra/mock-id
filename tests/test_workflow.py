@@ -163,6 +163,7 @@ def test_calibration_artifact_requires_integrity_and_evaluation(monkeypatch, tmp
     data = {
         "schema": 1,
         "version": "calibration-fixture-v1",
+        "face_model": "insightface-buffalo-l-w600k-r50",
         "points": DEMO_POINTS,
         "weights": {"face": 0.45, "pad": 0.35, "ocr": 0.2},
         "evaluation_report": "fixture only — not approved production accuracy",

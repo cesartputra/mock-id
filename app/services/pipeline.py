@@ -12,7 +12,7 @@ from app.config import WEIGHTS
 from app.model.repository import utcnow
 from app.services.imaging import CaptureError, card_region, quality
 from app.services.ocr import OCRService
-from app.services.face import FaceService
+from app.services.face import FaceService, FACE_MODEL_ID, FACE_MODEL
 from app.services.antispoof import AntiSpoofService, create_pad_service, PAD_FILE, PAD_MODEL
 from app.services.deepfake import DeepfakeService
 from app.services.landmarks import LandmarkService
@@ -22,6 +22,7 @@ from app.services.card import HoldingCardService
 from app.services.visibility import FaceVisibilityService
 from app.services.inference import pad_policy
 from app.services.score_policy import ScoreCalibrator
+from app.services.document import read_document, capture_warning
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-MODEL_FILES = ['yunet.onnx', 'sface.onnx', PAD_FILE, 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
+MODEL_FILES = ['yunet.onnx', 'arcface_r50.onnx', PAD_FILE, 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
 
 
 class VerificationService:
@@ -54,7 +55,7 @@ class VerificationService:
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
         return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
-                'last_error': self.last_error, 'dukcapil': 'mock' if os.getenv('MOCK_ID_MODE','demo')=='demo' else 'official_not_configured', 'inference': 'real', 'pad_model': PAD_MODEL,
+                'last_error': self.last_error, 'dukcapil': 'mock' if os.getenv('MOCK_ID_MODE','demo')=='demo' else 'official_not_configured', 'inference': 'real', 'pad_model': PAD_MODEL, 'face_model': FACE_MODEL, 'face_model_id': FACE_MODEL_ID,
                 'pad_runtime': dict(self.pad.model.status) if self.pad else ({'requested':'remote','selected':'remote','runtime':'Remote PAD · menunggu respons worker','fallback_reason':None,'loaded':False,'providers':[]} if os.getenv('MOCK_ID_PAD_WORKER_URL') else {**pad_policy(), 'loaded': False, 'providers': []}),
                 'other_runtime': 'CPU (OCR, wajah, landmark, tangan, penutup wajah, diagnostik)'}
 
@@ -139,7 +140,8 @@ class VerificationService:
                     face = self.face.one(image, allow_small_extra=True)
                 except CaptureError:
                     return blocked('portrait_missing', 'Potret wajah pada KTP belum terdeteksi. Dekatkan kartu dan tampilkan seluruh potret dengan jelas.')
-                return {'ready': True, 'complete': True, 'context': context,
+                return {'ready': True, 'complete': False, 'context': context,
+                        '_document_reading':reading,
                         'warnings': [], 'nik_readable': True,
                         'subject_key': hmac.new(self.subject_key, reading['fields']['nik'].encode(), hashlib.sha256).hexdigest(),
                         'ocr_confidence': reading['confidence'], 'face_box': [round(float(v)) for v in face[:4]], 'mode': 'real'}
@@ -262,13 +264,12 @@ class VerificationService:
                 if invalid:
                     raise ModelUnavailable('Model hilang/berubah: '+', '.join(invalid))
                 self.assets_verified = True
-            q = quality(image)
-            result = self.ocr.read(image)
-            result['quality'] = q
+            result = read_document(image, self.ocr)
             if not result['fields']['nik']:
                 raise CaptureError('NIK 16 digit belum terbaca dari KTP. Ambil gambar yang lebih jelas; data tidak diisi otomatis dengan contoh.')
-            if q['blur'] < self.repository.settings()['blur_min'] or not 35 < q['brightness'] < 235:
-                raise CaptureError('Gambar KTP terlalu buram, gelap, atau silau. Ambil ulang foto.')
+            warning = capture_warning(result)
+            if warning:
+                raise CaptureError(warning[1])
             return result
 
     def run(self, session, selfie, holding, frames, manifest):
@@ -316,8 +317,8 @@ class VerificationService:
                 face_score = self.face.compare(doc, ref_face, selfie, self_face)
                 kyc_face_score = self.face.compare(selfie, self_face, holding, holding_face)
                 scores['face_cosine'], scores['kyc_face_cosine'] = face_score, kyc_face_score
-                add('Wajah KTP ↔ selfie', face_score >= rules['face_cosine'], {'cosine': face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
-                add('Wajah selfie ↔ foto KYC', kyc_face_score >= rules['face_cosine'], {'cosine': kyc_face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
+                add('Wajah KTP ↔ selfie', face_score >= rules['face_cosine'], {'cosine': face_score, 'threshold': rules['face_cosine'], 'model': FACE_MODEL, 'model_id': FACE_MODEL_ID})
+                add('Wajah selfie ↔ foto KYC', kyc_face_score >= rules['face_cosine'], {'cosine': kyc_face_score, 'threshold': rules['face_cosine'], 'model': FACE_MODEL, 'model_id': FACE_MODEL_ID})
                 stage = "holding"
                 card=HoldingCardService(self.ocr).read(holding,reference=doc,expected_nik=identity['nik'])
                 held_ocr,card_box=card['reading'],card['box']

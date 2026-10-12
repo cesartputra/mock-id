@@ -39,8 +39,12 @@ def warp_card(image, points):
     # Keep the long side horizontal, including rotated landscape cards.
     if np.linalg.norm(ordered[1]-ordered[0]) < np.linalg.norm(ordered[3]-ordered[0]):
         ordered = np.roll(ordered, -1, axis=0)
-    transform = cv2.getPerspectiveTransform(ordered, np.float32([[0,0],[855,0],[855,539],[0,539]]))
-    return cv2.warpPerspective(image, transform, (856,540))
+    width=max(np.linalg.norm(ordered[1]-ordered[0]),np.linalg.norm(ordered[2]-ordered[3]))
+    height=max(np.linalg.norm(ordered[3]-ordered[0]),np.linalg.norm(ordered[2]-ordered[1]))
+    scale=min(1.,1920/max(width,height))
+    width,height=max(2,round(width*scale)),max(2,round(height*scale))
+    transform = cv2.getPerspectiveTransform(ordered, np.float32([[0,0],[width-1,0],[width-1,height-1],[0,height-1]]))
+    return cv2.warpPerspective(image, transform, (width,height))
 
 
 def card_region(image):

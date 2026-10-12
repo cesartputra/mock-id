@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "face_model": "insightface-buffalo-l-w600k-r50",
   "version": "REPLACE-WITH-REVIEWED-CALIBRATION-VERSION",
   "approved_by": "",
   "evaluation_report": "",

@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from app.services.imaging import CaptureError, card_region, warp_card
 from app.services.ocr import nik_match
+from app.services.glare import require_no_glare, GLARE_MESSAGE
 
 
 class HoldingCardService:
@@ -82,23 +83,34 @@ class HoldingCardService:
         if matched:
             candidates.insert(0, matched)
         mismatch = None
+        glare_seen = False
         for _, crop, box in candidates[:6]:
+            try:
+                glare = require_no_glare(crop)
+            except CaptureError:
+                glare_seen = True
+                continue
             reading = self.ocr.read(crop)
             if not reading['fields']['nik']:
                 gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
                 enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
                 reading = self.ocr.read(cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR))
+            reading['glare'] = glare
             if reading['fields']['nik']:
                 result = {'reading': reading, 'box': box, 'method': 'reference_features' if matched and box == matched[2] else 'card_geometry'}
                 if not expected_nik or reading['fields']['nik'] == expected_nik:
                     return result
                 mismatch = mismatch or result
+        if glare_seen and not mismatch:
+            raise CaptureError(GLARE_MESSAGE)
         # OCR can work even when fingers break all four border contours.
         full = self.ocr.read(image)
         region = self.text_region(image, full)
         if region:
             crop, box = region
+            glare = require_no_glare(crop)
             reading = self.ocr.read(crop)
+            reading['glare'] = glare
             if reading['fields']['nik']:
                 result = {'reading': reading, 'box': box, 'method': 'ocr_text_layout'}
                 if not expected_nik or reading['fields']['nik'] == expected_nik:

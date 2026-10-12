@@ -1,5 +1,7 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.1.0**: OCR kamera memakai crop perspektif resolusi asli, pembacaan ulang ROI terbatas, dan konsensus server ≥3 frame untuk NIK/nama/tanggal lahir. Capture otomatis diikat ke foto persis yang diperiksa; hasil ambigu tetap perlu diperiksa pengguna. Label rusak dicocokkan dari tata letak tanpa mengarang ejaan identitas atau digit NIK. Pantulan putih besar pada ROI kartu ditolak sebelum OCR. Pencocokan wajah memakai **InsightFace ArcFace ResNet50**, menggantikan SFace; detektor YuNet dan Swin PAD tetap dipakai. Document Liveness dibatalkan sesuai permintaan. Lihat [rincian OCR](docs/OCR.md). Setelah pull, hentikan server lama, jalankan `npm run setup` untuk bobot baru dan `npm start`. Bobot InsightFace hanya untuk riset nonkomersial, bukan lisensi penggunaan produksi.
+
 Pembaruan **3.0.4**: Dukcapil pada mode demo dianggap **passed** dan ditampilkan sebagai **MOCK · lolos simulasi**. Respons adapter memiliki `status=passed`, `simulated=true`, dan hasil/permohonan memiliki `identity_demo_passed=true`. Flag `identity_verified` tetap khusus validasi resmi. Pemeriksaan OCR/wajah/gerakan/PAD dan aturan keputusan tetap berjalan. Profil produksi tetap memerlukan adapter resmi. Restart server sesudah pull; perubahan berlaku untuk pemeriksaan baru.
 
 Pembaruan **3.0.3**: frame preview dan liveness memakai kualitas yang sama (hingga 1920 px, JPEG 0.95, tanpa memperbesar resolusi kamera). Pada mode demo tanpa kalibrasi disetujui, skor PAD rendah diperlakukan sebagai perlu pemeriksaan manual. Gerakan tetap harus terbaca dari model; PAD tetap diperiksa pada rekaman, selfie dan foto memegang KTP. PAD yang belum terpenuhi menahan persetujuan otomatis/PDF dan otomatis mengambil kuota pemeriksaan hari ini bila tersedia. Produksi dan profil terkalibrasi mempertahankan aturan PAD ketat. Menu, form login petugas, dan halaman workspace petugas di UI dihapus; link lama diarahkan ke beranda. Sesudah pull, restart server dan reload browser.
@@ -107,7 +109,7 @@ app/
 └── services/
     ├── pipeline.py            # Orkestrasi pemeriksaan dan keputusan
     ├── ocr.py                 # RapidOCR + parser identitas
-    ├── face.py                # YuNet + SFace
+    ├── face.py                # YuNet + ArcFace R50
     ├── landmarks.py           # PIPNet + MediaPipe Hand ONNX
     ├── antispoof.py           # Swin V2-B
     ├── deepfake.py             # ViT Real/Fake
@@ -150,7 +152,7 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Pemeriksaan | Implementasi | Sumber |
 |---|---|---|
 | OCR | RapidOCR 3.10 / PaddleOCR ONNX, multilingual recognition | [RapidOCR](https://github.com/RapidAI/RapidOCR) |
-| Wajah | OpenCV YuNet dan SFace; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [SFace](https://huggingface.co/opencv/face_recognition_sface) |
+| Wajah | OpenCV YuNet + InsightFace ArcFace R50; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [ArcFace R50](https://github.com/deepinsight/insightface/tree/master/model_zoo) |
 | Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
 | Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CoreML + CPU (Apple Silicon) atau CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
@@ -160,7 +162,7 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 
 Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT), FaceAttribNet (BSD-3-Clause), dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
 
-SFace memakai ambang cosine awal 0.363. Ambang PAD, cosine, dan blur dapat diubah di UI; keputusan menggunakan konfigurasi backend. Ambang classifier gambar hanya referensi diagnostik dan tidak menentukan kelulusan KYC. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
+ArcFace R50 memakai ambang cosine demo awal 0.40. Konfigurasi lama SFace dimigrasikan sekali; kalibrasi harus menyebut model ArcFace yang sesuai. Ambang PAD, cosine, dan blur dapat diubah melalui API berotorisasi; keputusan menggunakan konfigurasi backend. Ambang classifier gambar hanya referensi diagnostik dan tidak menentukan kelulusan KYC. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
 
 Gerakan dihitung dari landmark aktual: baseline eye aspect ratio ≥0.22 lalu tertutup ≤0.19 dan ≤70% baseline; senyum menambah lebar mulut relatif ≥10% dan ≥0.06; putaran kepala mengubah posisi hidung relatif ≥0.12. Batas ini perlu diuji pada perangkat dan kondisi capture Anda.
 
@@ -274,7 +276,7 @@ Tes regresi kebijakan memakai fixture terpisah: PAD 97,2%, cosine 0,620 dan skor
 
 MiniFASNet diganti dengan **Swin V2-B area wajah** dari repo resmi Xianhua-He, revision `2b7e9d2f6af93e33806c11ad48f735f1c1810dad`. Checkpoint `face_swin_v2_base.pth` (SHA-256 `8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc`) dikonversi menjadi ONNX FP32/opset 17, berukuran sekitar **335 MiB**. Bobot general-scenario area wajah dipakai; bukan checkpoint full-image atau model protokol kompetisi ResNet. Tidak ada fallback diam-diam ke MiniFASNet.
 
-Preprocessing memakai ROI wajah dengan margin 20 px yang dibatasi bingkai, resize linear 224×224, BGR→RGB dan normalisasi ImageNet mean `[.485,.456,.406]`/std `[.229,.224,.225]`. Tidak dilakukan SFace alignment untuk PAD. Model menghasilkan dua logits: **live=0, spoof=1**, berbeda dari indeks live MiniFASNet sebelumnya. Backend mengembalikan dua probabilitas, label kelas, nama checkpoint, revisi sumber dan runtime ONNX/CPU pada semua pemeriksaan PAD. Swin dipakai di preview, streaming gerakan dan final verify. SFace tetap untuk pencocokan wajah; ViT generic tetap diagnostik seperti versi 2.4.2.
+Preprocessing memakai ROI wajah dengan margin 20 px yang dibatasi bingkai, resize linear 224×224, BGR→RGB dan normalisasi ImageNet mean `[.485,.456,.406]`/std `[.229,.224,.225]`. Tidak dilakukan ArcFace alignment untuk PAD. Model menghasilkan dua logits: **live=0, spoof=1**, berbeda dari indeks live MiniFASNet sebelumnya. Backend mengembalikan dua probabilitas, label kelas, nama checkpoint, revisi sumber dan runtime ONNX/CPU pada semua pemeriksaan PAD. Swin dipakai di preview, streaming gerakan dan final verify. ArcFace R50 digunakan untuk pencocokan wajah; ViT generic tetap diagnostik seperti versi 2.4.2.
 
 Ekspor dimuat dengan restricted unpickler (`weights_only=True`), state dictionary harus cocok penuh (`strict=True`). Arsitektur upstream disertakan hanya untuk reproduksi ekspor; perubahan terbatas pada helper inference dan konstanta CUDA agar berjalan di CPU. Laporan `app/model/swin-pad-export.json` mencatat parity logits maksimal sekitar **0,000003** pada tiga variasi fixture publik. Benchmark `app/model/swin-pad-benchmark.json` pada Mac arm64, dua thread CPU: median PAD **0,214 detik**, peak proses setelah seluruh model dimuat dan PAD dijalankan **994 MiB**. Angka tersebut bukan waktu total alur kamera atau jaminan penggunaan RAM; frame/capture dan browser menambah kebutuhan memori. Runtime tidak memerlukan PyTorch atau GPU.
 
@@ -303,7 +305,7 @@ Tes memeriksa input RGB/normalisasi, indeks kelas, inference CPU nyata, penolaka
 
 ## Pembaruan 2.6 — CoreML untuk Mac Apple Silicon
 
-Swin V2 anti-spoof kini memilih `CoreMLExecutionProvider` otomatis ketika Python berjalan sebagai `arm64` di macOS dan provider tersedia. Model ONNX/bobot tetap sama. CoreML memakai **NeuralNetwork**, `MLComputeUnits=ALL`, input statis dan fallback operasi ke CPU. Konfigurasi MLProgram gagal memuat graph Swin pada pengujian lokal, sehingga tidak digunakan. OCR, SFace/YuNet, landmark, tangan, FaceAttrib dan classifier diagnostik tetap memakai CPU; ini adalah pipeline hybrid, bukan pemindahan seluruh aplikasi ke GPU.
+Swin V2 anti-spoof kini memilih `CoreMLExecutionProvider` otomatis ketika Python berjalan sebagai `arm64` di macOS dan provider tersedia. Model ONNX/bobot tetap sama. CoreML memakai **NeuralNetwork**, `MLComputeUnits=ALL`, input statis dan fallback operasi ke CPU. Konfigurasi MLProgram gagal memuat graph Swin pada pengujian lokal, sehingga tidak digunakan. OCR, ArcFace R50/YuNet, landmark, tangan, FaceAttrib dan classifier diagnostik tetap memakai CPU; ini adalah pipeline hybrid, bukan pemindahan seluruh aplikasi ke GPU.
 
 ONNX Runtime 1.23.2 yang sudah dipasang menyediakan CoreML EP di Mac ini. Tidak perlu memasang CUDA, PyTorch runtime, atau mengunduh model baru. Python yang berjalan melalui Rosetta/x86_64 akan memakai CPU. CoreML menentukan penempatan operasi pada CPU/GPU/Neural Engine; daftar provider tidak membuktikan perangkat fisik yang dipakai. Lihat [dokumentasi resmi CoreML EP](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html).
 

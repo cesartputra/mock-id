@@ -36,6 +36,8 @@ class CaptureSession:
     liveness_selfie: str | None = None
     document: object | None = None
     document_result: dict | None = None
+    document_consensus: object | None = None
+    document_probe: dict | None = None
     last_result: dict | None = None
     challenges: list = field(default_factory=lambda: secrets.SystemRandom().sample(['blink', 'turn', 'smile'], 3))
 

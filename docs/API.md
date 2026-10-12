@@ -53,7 +53,7 @@ Snapshot contoh struktur (nilai routing berasal dari model, tidak boleh dikirim 
     "demo_routing_score": null,
     "routing_score": null,
     "calibrated": false,
-    "policy_version": "demo-routing-v2-pad-review",
+    "policy_version": "demo-routing-v3-arcface-r50",
     "scope": "synthetic_only"
   },
   "identity_verified": false,
@@ -104,3 +104,11 @@ Frontend tidak membaca daftar seluruh applications pemohon sebagai menu; status 
 ## Dukcapil demo (3.0.4)
 
 Adapter mock mengembalikan `status: passed`, `simulated: true`, `identity_demo_passed: true`, `identity_verified: false`. Hasil verifikasi dan snapshot permohonan memuat `identity_demo_passed`; UI menampilkan MOCK · lolos simulasi. Flag `identity_verified` tetap khusus identitas yang divalidasi oleh sumber berwenang. Produksi memilih adapter resmi dan tetap ditahan bila belum tersedia. Status mock tidak mengubah hasil model/PAD atau keputusan review. Hasil lama tidak diubah; lakukan pemeriksaan baru untuk memakai status mock baru.
+
+## Capture dokumen otomatis 3.1.0
+
+`POST /api/sessions/{id}/auto-capture/check` (`context=document`) mengembalikan `identity_ready`, `verified_frames`, `field_feedback` dan status pending. NIK, nama serta tanggal lahir harus valid, confidence internal ≥0.80 dan konsisten dari ≥3 hash frame berbeda dalam buffer maksimum 5 frame/20 detik. Ini adalah heuristik capture, bukan kalibrasi kepastian identitas. NIK baru menghapus buffer; retake menghapus buffer/token. Tidak ada voting digit atau menyalin data dari KTP lain.
+
+Saat siap: `complete=true`, `document_capture_token` opaque. Client mengirim **blob persis dari respons itu** dan token ke `POST /api/sessions/{id}/document` (`capture_token` opsional Form). Server mengikat token ke hash foto, revisi sesi dan umur ≤20 detik, lalu menggunakan hasil OCR tersimpan; tidak membaca ulang seluruh gambar. Token kedaluwarsa/replay/foto berubah/revisi berubah ditolak 409 sebelum attempt dibebankan. Unggahan manual tanpa token tetap menjalankan OCR nyata dan halaman koreksi identitas. Semua aturan consent/nonce/ownership tetap berlaku.
+
+Silau pada kartu yang dapat dilokalisasi mengembalikan warning capture agar sudut/pencahayaan diubah. Pemeriksaan ini bukan Document Liveness atau pembuktian PVC asli.

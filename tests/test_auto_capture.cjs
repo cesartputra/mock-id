@@ -38,7 +38,7 @@ test("auto capture needs two complete readings of the same card and fires once",
   assert.equal(gate.observe(ready("holding", "card-b"), 3000), true);
   assert.equal(gate.observe(ready("holding", "card-b"), 4000), false);
 });
-test("warning, stale interval, cancellation or duplicate callback cannot complete capture", () => {
+test("document capture requires server identity consensus and a bound token, not only NIK", () => {
   const gate = new AutoCaptureGate("document");
   assert.equal(gate.observe(ready("document"), 1000), false);
   assert.equal(gate.observe(ready("document"), 1000), false);
@@ -50,7 +50,49 @@ test("warning, stale interval, cancellation or duplicate callback cannot complet
   assert.equal(gate.observe(ready("document"), 12000), false);
   gate.reset();
   assert.equal(gate.observe(ready("document"), 13000), false);
-  assert.equal(gate.observe(ready("document"), 14000), true);
+  assert.equal(
+    gate.observe(
+      {
+        ...ready("document"),
+        identity_ready: true,
+        verified_frames: 2,
+        document_capture_token: "server-token",
+      },
+      14000,
+    ),
+    false,
+  );
+  assert.equal(
+    gate.observe(
+      { ...ready("document"), identity_ready: true, verified_frames: 3 },
+      15000,
+    ),
+    false,
+  );
+  assert.equal(
+    gate.observe(
+      {
+        ...ready("document"),
+        identity_ready: true,
+        verified_frames: 3,
+        document_capture_token: "server-token",
+      },
+      16000,
+    ),
+    true,
+  );
+  assert.equal(
+    gate.observe(
+      {
+        ...ready("document"),
+        identity_ready: true,
+        verified_frames: 3,
+        document_capture_token: "server-token",
+      },
+      17000,
+    ),
+    false,
+  );
 });
 test("another camera context never satisfies the document gate", () => {
   const gate = new AutoCaptureGate("document");

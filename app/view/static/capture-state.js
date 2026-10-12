@@ -21,6 +21,7 @@ const CaptureState = {
     }
     if (stage === "document") {
       flow.ocr = null;
+      flow.documentCaptureToken = null;
       if (!keepInput) clear("document");
     }
   },

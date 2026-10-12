@@ -6,6 +6,7 @@ import secrets
 import math
 import logging
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, Security
@@ -19,6 +20,7 @@ from app.model.repository import utcnow
 from app.services.imaging import CaptureError, decode_image
 from app.services.pipeline import ModelUnavailable
 from app.services.liveness import LiveCapture
+from app.services.document_consensus import DocumentConsensus
 from app.services.auth import actor
 from app.services.workflow import TRANSITIONS
 
@@ -271,7 +273,7 @@ def retake(session_id: str, body: Retake, request: Request):
 
 
 @router.post('/sessions/{session_id}/document')
-async def document(session_id: str, request: Request, image: UploadFile = File(...)):
+async def document(session_id: str, request: Request, image: UploadFile = File(...), capture_token: str | None = Form(None)):
     sessions, verifier, repository = services(request)
     session = sessions.get(session_id)
     sessions.check_revision(session, request)
@@ -280,12 +282,23 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
     live_token = session.liveness_nonce
     if session.consumed or session.processing or session.liveness_processing:
         raise HTTPException(409, 'Sesi sudah diproses. Gunakan retry atau sesi baru.')
+    decoded, digest = await image_upload(image)
     with sessions.lock:
+        sessions.check_revision(session, request)
+        if session.revision != revision or session.processing or session.consumed:
+            raise HTTPException(409,'Capture berubah. Gunakan frame terbaru.')
+        result = None
+        if capture_token:
+            probe=session.document_probe
+            if not probe or probe['revision']!=revision or probe['digest']!=digest or time.monotonic()-probe['created']>20 or not secrets.compare_digest(probe['token'],capture_token):
+                raise HTTPException(409,'Bukti OCR otomatis berubah atau kedaluwarsa. Buka kamera kembali.')
+            result=deepcopy(probe['reading'])
+            session.document_probe=None  # Reserve this one-use proof under the session lock.
         if session.document_attempts>=MAX_ATTEMPTS: raise HTTPException(429,'Batas tiga pengambilan OCR tercapai. Buat permohonan baru.')
         session.document_attempts+=1
-    decoded, digest = await image_upload(image)
     try:
-        result = await request.app.state.inference_queue.run(verifier.document, decoded)
+        if result is None:
+            result = await request.app.state.inference_queue.run(verifier.document, decoded)
     except CaptureError as exc:
         raise HTTPException(422, str(exc)) from exc
     except ModelUnavailable as exc:
@@ -298,12 +311,14 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
         session.document_digest = digest
         session.document = decoded
         session.document_result = result
+        session.document_probe = None
+        session.document_consensus = None
         # Live-person evidence is independent of the card image. Replacing the
         # document still forces fresh face/NIK comparisons in final verify.
         if not (session.liveness_result and session.liveness_result.get('passed')):
             sessions.clear_liveness(session)
     repository.audit('OCR selesai', f'NIK terbaca; confidence {result["confidence"]:.3f}. Gambar tidak disimpan ke disk.', session.id)
-    return result if actor(request)['role'] in ['admin','helpdesk'] else {k:v for k,v in result.items() if k not in ['confidence','quality','boxes']}
+    return result if actor(request)['role'] in ['admin','helpdesk'] else {k:v for k,v in result.items() if k not in ['confidence','quality','boxes','scores','field_meta','text_quality']}
 
 
 @router.post('/sessions/{session_id}/auto-capture/check')
@@ -325,7 +340,7 @@ async def auto_capture_check(session_id: str, request: Request, image: UploadFil
         session.last_preview = now
         document = session.document
         identity = dict(session.document_result['fields']) if session.document_result else None
-    decoded, _ = await image_upload(image)
+    decoded, digest = await image_upload(image)
     try:
         result = await request.app.state.inference_queue.run(verifier.inspect_auto_capture, decoded, context, document, identity)
     except ModelUnavailable as exc:
@@ -335,6 +350,25 @@ async def auto_capture_check(session_id: str, request: Request, image: UploadFil
         sessions.check_revision(session,request)
         if session.revision != revision or session.processing or session.consumed:
             raise HTTPException(409, 'Capture sudah berubah. Gunakan pengambilan terbaru.')
+        if context == 'document':
+            reading=result.pop('_document_reading',None)
+            session.document_probe=None
+            if result['ready'] and reading:
+                session.document_consensus=session.document_consensus or DocumentConsensus()
+                merged,pending,count=session.document_consensus.observe(reading,digest,time.monotonic())
+                result.update(complete=merged is not None,ready=merged is not None,
+                              identity_ready=merged is not None,verified_frames=count,
+                              card_box=reading.get('card_box'),field_feedback=reading.get('field_feedback',{}))
+                if merged:
+                    token=secrets.token_urlsafe(32)
+                    session.document_probe={'token':token,'digest':digest,'revision':revision,'created':time.monotonic(),'reading':merged}
+                    result.update(document_capture_token=token,field_feedback=merged['field_feedback'],warnings=[])
+                else:
+                    labels={'nik':'NIK','name':'nama','birth':'tanggal lahir'}
+                    result['warnings']=[{'code':'ocr_stabilizing','message':'Memastikan '+', '.join(labels[key] for key in pending)+' dari beberapa frame. Tahan kartu pada jarak yang tetap fokus.'}]
+            elif session.document_consensus:
+                # Invalid/occluded observations must not preserve a ready token.
+                session.document_consensus=None
     return capture_result({**result, 'image_size': [decoded.shape[1], decoded.shape[0]]},actor(request))
 
 
@@ -506,7 +540,7 @@ def applicant_result(result, who):
 
 def capture_result(result, who):
     if who['role'] in ['admin','helpdesk']: return result
-    keys=['ready','complete','context','warnings','face_box','card_box','image_size','nik_readable','nik_matches','hand_detected','subject_key','mode','pad_review_required']
+    keys=['ready','complete','context','warnings','face_box','card_box','image_size','nik_readable','nik_matches','hand_detected','subject_key','mode','pad_review_required','identity_ready','verified_frames','document_capture_token','field_feedback']
     return {k:result[k] for k in keys if k in result}
 
 

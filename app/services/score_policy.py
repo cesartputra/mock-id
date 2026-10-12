@@ -5,9 +5,10 @@ import json
 import math
 import os
 from pathlib import Path
+from app.services.face import FACE_MODEL_ID
 
 DEMO_POINTS = {
-    "face": [(-1, 0), (0.2, 40), (0.363, 75), (0.5, 92), (0.6, 97), (0.85, 100)],
+    "face": [(-1, 0), (0.2, 40), (0.4, 75), (0.5, 92), (0.6, 97), (0.85, 100)],
     "pad": [(0, 0), (0.8, 75), (0.9, 92), (0.95, 97), (0.995, 100)],
     "ocr": [(0, 0), (0.6, 60), (0.8, 85), (0.9, 95), (1, 100)],
 }
@@ -34,7 +35,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v2-pad-review"
+        self.version = "demo-routing-v3-arcface-r50"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -51,9 +52,10 @@ class ScoreCalibrator:
                 not artifact.get("evaluation_report")
                 or not artifact.get("approved_by")
                 or artifact.get("schema") != 1
+                or artifact.get("face_model") != FACE_MODEL_ID
             ):
                 raise ValueError(
-                    "Artefak kalibrasi belum memiliki evaluasi/persetujuan."
+                    "Artefak kalibrasi harus memiliki evaluasi/persetujuan dan model ArcFace R50 yang sesuai."
                 )
             for name in WEIGHTS:
                 points = artifact["points"][name]

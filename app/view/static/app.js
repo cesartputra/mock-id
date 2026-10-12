@@ -85,7 +85,7 @@ const modules = [
   ],
   [
     "Anti-spoof / PAD",
-    "CVPR 2024 Swin V2-B · ONNX CPU",
+    "CVPR 2024 Swin V2-B · CoreML / CPU",
     "Probabilitas live dari selfie dan sampel frame tantangan.",
     "verify",
   ],
@@ -275,7 +275,7 @@ function dashboard() {
     )
     .join(
       "",
-    )}</div><div class="grid-two"><section class="panel"><div class="panel-head"><div><h2>Pipeline pemeriksaan</h2><p>Tanpa pilihan skenario atau skor preset.</p></div><span class="new-tag">CPU INFERENCE</span></div><div class="panel-body">${[
+    )}</div><div class="grid-two"><section class="panel"><div class="panel-head"><div><h2>Pipeline pemeriksaan</h2><p>Tanpa pilihan skenario atau skor preset.</p></div><span class="new-tag">LOCAL INFERENCE</span></div><div class="panel-body">${[
     ["OCR & kualitas KTP", "Teks, NIK 16 digit, blur, dan pencahayaan"],
     [
       "Selfie & tantangan gerakan",
@@ -300,7 +300,7 @@ function dashboard() {
     )
     .join(
       "",
-    )}</div></section><section class="panel"><div class="panel-head"><h2>Status runtime</h2></div><div class="panel-body"><div class="runtime-status">${workspace.health.ready ? icon("check") : icon("info")}<strong>${workspace.health.ready ? "Model tersedia" : "Perlu setup model"}</strong></div><p class="step-description">Inference menggunakan CPU pada komputer ini. Tidak ada foto yang dikirim ke penyedia model.</p><div class="result-control"><span>Penyimpanan</span><span class="badge green">SQLite lokal</span></div><div class="result-control"><span>Bobot model</span><span class="badge gray">SHA-256 pinned</span></div><div class="result-control"><span>Dukcapil</span><span class="badge orange">MOCK · belum terverifikasi</span></div><div class="callout" style="margin-top:20px">Hasil “kontrol lokal terpenuhi” tidak mengonfirmasi keaslian KTP atau identitas resmi. Foto memegang kartu menjadi bukti pendukung untuk ditinjau.</div></div></section></div><section class="panel table-panel"><div class="panel-head"><div><h2>Permohonan terbaru</h2><p>Dataset dimulai kosong; tidak ada permohonan fiktif yang dimuat otomatis.</p></div></div>${table(records.slice(0, 5))}</section>`;
+    )}</div></section><section class="panel"><div class="panel-head"><h2>Status runtime</h2></div><div class="panel-body"><div class="runtime-status">${workspace.health.ready ? icon("check") : icon("info")}<strong>${workspace.health.ready ? "Model tersedia" : "Perlu setup model"}</strong></div><p class="step-description">${esc(padRuntimeLabel())}. ${esc(workspace.health.other_runtime || "Model lain menggunakan CPU")}. Foto tetap diproses lokal.</p><div class="result-control"><span>Penyimpanan</span><span class="badge green">SQLite lokal</span></div><div class="result-control"><span>Bobot model</span><span class="badge gray">SHA-256 pinned</span></div><div class="result-control"><span>Dukcapil</span><span class="badge orange">MOCK · belum terverifikasi</span></div><div class="callout" style="margin-top:20px">Hasil “kontrol lokal terpenuhi” tidak mengonfirmasi keaslian KTP atau identitas resmi. Foto memegang kartu menjadi bukti pendukung untuk ditinjau.</div></div></section></div><section class="panel table-panel"><div class="panel-head"><div><h2>Permohonan terbaru</h2><p>Dataset dimulai kosong; tidak ada permohonan fiktif yang dimuat otomatis.</p></div></div>${table(records.slice(0, 5))}</section>`;
 }
 function verifyView() {
   if (!flow) return head("Menyiapkan sesi…", "Sesi dibuat oleh backend lokal.");
@@ -402,9 +402,18 @@ function queueView() {
 function auditView() {
   return `${head("Jejak aktivitas", "Audit berasal dari backend dan tersimpan di SQLite lokal.", `<button class="button" data-export-audit>${icon("download")} Ekspor audit</button>`)}<section class="panel">${workspace.audit.map((e) => `<div class="audit-event"><div class="event-icon">${icon("audit")}</div><div class="event-content"><h3>${esc(e.type)} <span class="badge gray">${esc(e.ref)}</span></h3><p>${esc(e.detail)}</p></div><time>${date(e.created)} WIB</time></div>`).join("") || '<div class="empty">Belum ada aktivitas.</div>'}</section><p class="state-note">Database lokal dapat diubah oleh pemilik komputer. Audit ini belum dirancang sebagai log tahan manipulasi.</p>`;
 }
+function padRuntimeLabel() {
+  const runtime = workspace.health.pad_runtime;
+  if (!runtime) return "Runtime PAD belum diperiksa";
+  return `${runtime.runtime}${runtime.loaded ? " · model dimuat" : " · menunggu model dimuat"}`;
+}
+function runtimeView() {
+  const runtime = workspace.health.pad_runtime;
+  return `<section class="panel config-panel"><h2>Runtime pada perangkat ini</h2><div class="result-control"><span>Swin V2 anti-spoof</span><span class="badge blue">${esc(padRuntimeLabel())}</span></div><p>${esc(workspace.health.other_runtime || "Model lain menggunakan CPU")}</p><p class="state-note">CoreML memakai format NeuralNetwork dengan compute units ALL. Operasi yang tidak didukung tetap memakai CPU. Pilihan GPU/Neural Engine ditentukan CoreML; provider terdaftar bukan bukti semua operasi berjalan di GPU.</p>${runtime?.fallback_reason ? `<p class="text-error">${esc(runtime.fallback_reason)}</p>` : ""}</section>`;
+}
 function modulesView() {
   const settings = workspace.settings;
-  return `${head("Modul & konfigurasi", "Model benar-benar dijalankan; ketersediaan bobot dapat diperiksa di bawah.", `<span class="badge ${workspace.health.ready ? "green" : "orange"}">${workspace.health.ready ? "Bobot tersedia" : "Setup diperlukan"}</span>`)}<div class="module-grid">${modules.map(([title, engine, desc, i], n) => `<section class="panel module-card">${icon(i)}<h3>${title}</h3><p>${desc}</p><div class="module-meta"><span>${engine}</span><span class="badge ${n === 7 ? "orange" : n === 6 ? "blue" : "green"}">${n === 7 ? "MOCK" : n === 6 ? "DIAGNOSTIK" : "REAL"}</span></div></section>`).join("")}</div><section class="panel config-panel"><h2>Ketersediaan bobot</h2><p>Unduhan berada di app/model/weights dan tidak dimasukkan ke Git.</p>${Object.entries(
+  return `${head("Modul & konfigurasi", "Model benar-benar dijalankan; ketersediaan bobot dapat diperiksa di bawah.", `<span class="badge ${workspace.health.ready ? "green" : "orange"}">${workspace.health.ready ? "Bobot tersedia" : "Setup diperlukan"}</span>`)}<div class="module-grid">${modules.map(([title, engine, desc, i], n) => `<section class="panel module-card">${icon(i)}<h3>${title}</h3><p>${desc}</p><div class="module-meta"><span>${engine}</span><span class="badge ${n === 7 ? "orange" : n === 6 ? "blue" : "green"}">${n === 7 ? "MOCK" : n === 6 ? "DIAGNOSTIK" : "REAL"}</span></div></section>`).join("")}</div>${runtimeView()}<section class="panel config-panel"><h2>Ketersediaan bobot</h2><p>Unduhan berada di app/model/weights dan tidak dimasukkan ke Git.</p>${Object.entries(
     workspace.health.files,
   )
     .map(

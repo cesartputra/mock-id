@@ -1,6 +1,6 @@
 # mock-id — verifikasi identitas lokal
 
-Proyek lokal dengan halaman pendaftaran bergaya iDebKu dan modul OCR KTP, pencocokan wajah 1:1, tantangan liveness, anti-spoofing, klasifikasi manipulasi gambar, serta KYC dengan foto pemohon memegang KTP. **Pemrosesan foto memakai model open source sungguhan di CPU. Dukcapil dan pendaftaran layanan OJK memakai mock.**
+Proyek lokal dengan halaman pendaftaran bergaya iDebKu dan modul OCR KTP, pencocokan wajah 1:1, tantangan liveness, anti-spoofing, klasifikasi manipulasi gambar, serta KYC dengan foto pemohon memegang KTP. **Pemrosesan foto memakai model open source sungguhan secara lokal; Swin V2 memakai CoreML + CPU otomatis pada Mac Apple Silicon, model lain memakai CPU. Dukcapil dan pendaftaran layanan OJK memakai mock.**
 
 Backend FastAPI, frontend HTML/CSS/JavaScript, penyimpanan SQLite. Dashboard mulai kosong; tidak ada skenario hasil atau skor preset. Hasil yang belum dikerjakan tampil kosong, dan gangguan model tampil sebagai gangguan teknis.
 
@@ -111,7 +111,7 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Wajah | OpenCV YuNet dan SFace; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [SFace](https://huggingface.co/opencv/face_recognition_sface) |
 | Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
-| Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
+| Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CoreML + CPU (Apple Silicon) atau CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
 | Diagnostik gambar (tidak menentukan kelulusan) | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
 | Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
 | Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
@@ -257,3 +257,38 @@ python scripts/export_swin_pad.py --checkpoint face_swin_v2_base.pth --checkpoin
 ```
 
 Tes memeriksa input RGB/normalisasi, indeks kelas, inference CPU nyata, penolakan foto statis/bergerak oleh rangkaian liveness, integritas model, distribusi credential/redirect dan kontrol KYC yang tetap wajib. Parity ekspor dan fixture publik tidak membuktikan akurasi pada semua webcam. Ambang PAD default 0,80 tetap eksperimen; kalibrasi dengan capture asli dan serangan foto/layar yang representatif masih diperlukan. Tidak ada klaim bahwa Swin pasti menolak semua spoof atau tidak pernah salah pada wajah asli.
+
+
+## Pembaruan 2.6 — CoreML untuk Mac Apple Silicon
+
+Swin V2 anti-spoof kini memilih `CoreMLExecutionProvider` otomatis ketika Python berjalan sebagai `arm64` di macOS dan provider tersedia. Model ONNX/bobot tetap sama. CoreML memakai **NeuralNetwork**, `MLComputeUnits=ALL`, input statis dan fallback operasi ke CPU. Konfigurasi MLProgram gagal memuat graph Swin pada pengujian lokal, sehingga tidak digunakan. OCR, SFace/YuNet, landmark, tangan, FaceAttrib dan classifier diagnostik tetap memakai CPU; ini adalah pipeline hybrid, bukan pemindahan seluruh aplikasi ke GPU.
+
+ONNX Runtime 1.23.2 yang sudah dipasang menyediakan CoreML EP di Mac ini. Tidak perlu memasang CUDA, PyTorch runtime, atau mengunduh model baru. Python yang berjalan melalui Rosetta/x86_64 akan memakai CPU. CoreML menentukan penempatan operasi pada CPU/GPU/Neural Engine; daftar provider tidak membuktikan perangkat fisik yang dipakai. Lihat [dokumentasi resmi CoreML EP](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html).
+
+Update dan restart server lama melalui Ctrl+C terlebih dahulu:
+
+```bash
+git pull --ff-only
+npm start
+```
+
+Pilih **Modul & konfigurasi** untuk melihat provider PAD yang dipilih, apakah model sudah dimuat, dan alasan fallback. Sebelum penggunaan pertama status berbunyi “menunggu model dimuat”; model dimuat saat pemeriksaan wajah pertama. Kompilasi CoreML pertama dapat menambah waktu tunggu. Cache tersimpan di `.cache/coreml`, dipisahkan menurut SHA-256 bobot, versi ONNX Runtime dan konfigurasi agar graph lama tidak dipakai setelah update. Jika inisialisasi atau eksekusi CoreML gagal dengan exception, inferensi diulang melalui CPU dan fallback ditampilkan pada health/PAD result. Crash native runtime tidak dapat ditangkap oleh Python; bila proses berhenti, gunakan override CPU berikut.
+
+```bash
+# Membandingkan CPU atau mengatasi masalah driver/CoreML:
+MOCK_ID_PAD_PROVIDER=cpu npm start
+# Default otomatis untuk Apple Silicon:
+MOCK_ID_PAD_PROVIDER=auto npm start
+# Meminta CoreML; perangkat/provider yang tidak mendukung tetap fallback CPU:
+MOCK_ID_PAD_PROVIDER=coreml npm start
+```
+
+Konfigurasi berlaku untuk seluruh preview, streaming liveness dan final verify karena ketiganya memakai service PAD yang sama. Tidak ada perubahan ambang, label live/spoof atau aturan kelulusan. Metadata `pad_runtime` pada `/api/health` menunjukkan konfigurasi/provider terdaftar, bukan profil perangkat fisik. Runtime hasil PAD menunjukkan fallback bila terjadi saat inferensi.
+
+```bash
+npm run benchmark:coreml
+```
+
+Benchmark memeriksa checksum model, menjalankan CPU dan CoreML pada tiga variasi fixture astronaut publik, membandingkan logits/probabilitas, dan membaca event profiler untuk membuktikan operasi CoreML benar-benar dieksekusi. Laporan disimpan di `.cache/coreml-benchmark/report.json`. Pada Mac arm64/ORT 1.23.2 di lingkungan pengujian ini: median tujuh inferensi hangat CPU **0,2278 detik**, CoreML hybrid **0,2326 detik**, initialization masing-masing **0,633 / 4,527 detik**. CoreML mengeksekusi operasi, tetapi **belum lebih cepat** pada pengujian ini; sandbox macOS juga mengeluarkan peringatan akses cache. Jalankan benchmark di terminal biasa pada Mac Anda untuk menilai latensi aktual. Jumlah event provider tidak boleh dibaca sebagai persentase FLOPs atau waktu GPU. Laporan tersimpan di `app/model/swin-pad-coreml-benchmark.json`; selisih logits maksimum **0,0000043**, probabilitas **0,00000000083**. Ini validasi integrasi pada fixture publik, bukan akurasi KYC, RAM total atau FPS video kamera.
+
+Tes regresi KYC memakai CPU sebagai baseline yang konsisten; tes kebijakan provider memeriksa pemilihan Apple Silicon, override CPU, invalidasi cache, fallback saat compile/run/registrasi dan pelaporan status. Benchmark CoreML nyata dijalankan terpisah untuk menghindari kompetisi resource dengan tes.

@@ -17,6 +17,7 @@ from app.services.dukcapil import DukcapilService
 from app.services.assets import verify_assets
 from app.services.card import HoldingCardService
 from app.services.visibility import FaceVisibilityService
+from app.services.inference import pad_policy
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class VerificationService:
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
         return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
-                'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real', 'pad_model': PAD_MODEL}
+                'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real', 'pad_model': PAD_MODEL,
+                'pad_runtime': dict(self.pad.model.status) if self.pad else {**pad_policy(), 'loaded': False, 'providers': []},
+                'other_runtime': 'CPU (OCR, wajah, landmark, tangan, penutup wajah, diagnostik)'}
 
     def load(self):
         missing = [name for name, exists in self.availability()['files'].items() if not exists]

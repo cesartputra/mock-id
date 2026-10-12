@@ -25,6 +25,7 @@ def test_swin_tensor_is_rgb_imagenet_and_has_fixed_batch_shape():
 
 def test_swin_labels_cannot_inherit_minifas_live_index(monkeypatch):
     class Session:
+        def get_providers(self):return ['CPUExecutionProvider']
         def get_inputs(self):return [SimpleNamespace(name='face_rgb',shape=[1,3,224,224])]
         def get_outputs(self):return [SimpleNamespace(shape=[1,2])]
         def run(self, *_args):return [np.array([[5.,-5.]],np.float32)]

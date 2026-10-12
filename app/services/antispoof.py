@@ -4,6 +4,7 @@ import numpy as np
 import onnxruntime as ort
 from app.config import WEIGHTS
 from app.services.imaging import CaptureError
+from app.services.inference import PadSession
 
 PAD_FILE = 'cvpr2024_swin_v2_face.onnx'
 PAD_MODEL = 'CVPR 2024 Swin V2-B (face)'
@@ -46,7 +47,7 @@ def face_tensor(image, face):
 
 class AntiSpoofService:
     def __init__(self):
-        self.model = ort.InferenceSession(str(WEIGHTS / PAD_FILE), options(), providers=['CPUExecutionProvider'])
+        self.model = PadSession(WEIGHTS / PAD_FILE, options())
         model_input = self.model.get_inputs()[0]
         output = self.model.get_outputs()[0]
         if model_input.shape != [1, 3, 224, 224] or output.shape != [1, 2]:
@@ -64,5 +65,6 @@ class AntiSpoofService:
                 'spoof_probability': round(float(probs[1]), 5),
                 'class_probabilities': probs.tolist(), 'class_labels': ['live', 'spoof'],
                 'model': PAD_MODEL, 'checkpoint': 'face_swin_v2_base.pth',
-                'source_revision': PAD_REVISION, 'runtime': 'ONNX / CPU', 'mode': 'real',
+                'source_revision': PAD_REVISION, 'runtime': self.model.status['runtime'],
+                'runtime_details': dict(self.model.status), 'mode': 'real',
                 'scope': 'Model PAD physical/digital; skor dan ambang belum dikalibrasi untuk kamera KYC lokal.'}

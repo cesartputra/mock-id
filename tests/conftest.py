@@ -1,3 +1,6 @@
+import os
+# Security/temporal regression tests use a reproducible CPU baseline.
+os.environ["MOCK_ID_PAD_PROVIDER"] = "cpu"
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

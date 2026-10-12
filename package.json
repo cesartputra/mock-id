@@ -1,6 +1,6 @@
 {
   "name": "mock-id",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "private": true,
   "description": "Local open source OCR, biometric verification and KYC with FastAPI MVC",
   "scripts": {
@@ -8,6 +8,7 @@
     "start": "node scripts/start.mjs",
     "check": "node scripts/check.mjs",
     "test": "node scripts/test.mjs",
+    "benchmark:coreml": "node scripts/benchmark-coreml.mjs",
     "setup:test": "node scripts/install-test.mjs"
   },
   "engines": {

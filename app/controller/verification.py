@@ -261,6 +261,37 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
     return result
 
 
+@router.post('/sessions/{session_id}/auto-capture/check')
+async def auto_capture_check(session_id: str, request: Request, image: UploadFile = File(...), context: str = Form(...)):
+    sessions, verifier, _ = services(request)
+    if context not in ['document', 'holding']:
+        raise HTTPException(422, 'Jenis pengambilan otomatis tidak valid.')
+    with sessions.lock:
+        session = sessions.get(session_id)
+        sessions.check_revision(session, request)
+        revision = session.revision
+        if session.processing or session.consumed or session.liveness_processing:
+            raise HTTPException(409, 'Pemeriksaan lain masih berjalan atau sesi sudah diproses.')
+        if context == 'holding' and (session.document_result is None or not session.liveness_result or not session.liveness_result.get('passed')):
+            raise HTTPException(422, 'Selesaikan OCR dan liveness sebelum foto bersama KTP.')
+        now = time.monotonic()
+        if now-session.last_preview < .5:
+            raise HTTPException(429, 'Tunggu hasil pemeriksaan kamera sebelumnya.')
+        session.last_preview = now
+        document = session.document
+        identity = dict(session.document_result['fields']) if session.document_result else None
+    decoded, _ = await image_upload(image)
+    try:
+        result = await run_in_threadpool(verifier.inspect_auto_capture, decoded, context, document, identity)
+    except ModelUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    with sessions.lock:
+        sessions.get(session_id)
+        if session.revision != revision or session.processing or session.consumed:
+            raise HTTPException(409, 'Capture sudah berubah. Gunakan pengambilan terbaru.')
+    return {**result, 'image_size': [decoded.shape[1], decoded.shape[0]]}
+
+
 @router.post('/sessions/{session_id}/capture-check')
 async def capture_check(session_id: str, request: Request, image: UploadFile = File(...), context: str = Form('selfie')):
     sessions, verifier, _ = services(request)
@@ -279,6 +310,7 @@ async def capture_check(session_id: str, request: Request, image: UploadFile = F
     decoded,_=await image_upload(image,MAX_FRAME_BYTES)
     try:
         result = await run_in_threadpool(verifier.inspect_capture, decoded, context=='holding')
+        result['image_size'] = [decoded.shape[1], decoded.shape[0]]
         with sessions.lock:
             if session.revision != revision:
                 raise HTTPException(409, 'Capture sudah diambil ulang.')

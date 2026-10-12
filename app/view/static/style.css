@@ -2969,3 +2969,13 @@ dialog::backdrop {
     font-size: 22px;
   }
 }
+.auto-capture-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: #5a7656;
+  font-size: 12px;
+  line-height: 1.6;
+}

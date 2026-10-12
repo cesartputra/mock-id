@@ -88,6 +88,54 @@ class VerificationService:
         finally:
             self.lock.release()
 
+    def inspect_auto_capture(self, image, context, document=None, identity=None):
+        # Serial inference with backpressure. A clean face alone must never
+        # trigger a held-card capture: its NIK, hand and face match are required.
+        if not self.lock.acquire(blocking=False):
+            return {'ready': False, 'complete': False, 'context': context,
+                    'warnings': [{'code': 'inference_busy', 'message': 'Pemeriksaan sedang berjalan. Tahan posisi sebentar.'}], 'mode': 'real'}
+        try:
+            def blocked(code, message, feedback=None):
+                return {**(feedback or {}), 'ready': False, 'complete': False,
+                        'context': context, 'warnings': [{'code': code, 'message': message}], 'mode': 'real'}
+            if context == 'document':
+                try:
+                    reading = self.document(image)
+                except CaptureError as exc:
+                    return blocked('document_unreadable', str(exc))
+                self.face = self.face or FaceService()
+                try:
+                    face = self.face.one(image, allow_small_extra=True)
+                except CaptureError:
+                    return blocked('portrait_missing', 'Potret wajah pada KTP belum terdeteksi. Dekatkan kartu dan tampilkan seluruh potret dengan jelas.')
+                return {'ready': True, 'complete': True, 'context': context,
+                        'warnings': [], 'nik_readable': True,
+                        'subject_key': hashlib.sha256(reading['fields']['nik'].encode()).hexdigest(),
+                        'ocr_confidence': reading['confidence'], 'face_box': [round(float(v)) for v in face[:4]], 'mode': 'real'}
+            feedback = self.inspect_capture(image, holding=True)
+            if not feedback['ready']:
+                return {**feedback, 'complete': False, 'context': context}
+            try:
+                card = HoldingCardService(self.ocr).read(image, reference=document, expected_nik=identity['nik'])
+                hand = self.landmarks.hand_near_card(image, card['box'])
+                if card['reading']['fields']['nik'] != identity['nik']:
+                    return blocked('card_mismatch', 'Gunakan KTP yang sama dengan foto KTP sebelumnya.', feedback)
+                if not hand['passed']:
+                    return blocked('hand_missing', 'Tangan yang memegang KTP belum terlihat. Tampilkan tangan dan kartu secara utuh.', feedback)
+                ref_face = self.face.one(document, allow_small_extra=True)
+                held_face = self.face.one(image, allow_small_extra=True)
+                cosine = self.face.compare(document, ref_face, image, held_face)
+                if cosine < self.repository.settings()['face_cosine']:
+                    return blocked('face_mismatch', 'Wajah belum cocok dengan foto pada KTP. Tatap kamera dengan wajah terang dan tidak tertutup.', feedback)
+                return {**feedback, 'complete': True, 'context': context,
+                        'nik_readable': True, 'nik_matches': True, 'hand_detected': True,
+                        'card_box': card['box'], 'face_cosine': cosine,
+                        'subject_key': hashlib.sha256(identity['nik'].encode()).hexdigest()}
+            except CaptureError as exc:
+                return blocked('holding_unreadable', str(exc), feedback)
+        finally:
+            self.lock.release()
+
     def inspect_liveness_frame(self, capture, image, digest, seq):
         with self.lock:
             feedback = self.inspect_capture(image)

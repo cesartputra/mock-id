@@ -1,4 +1,5 @@
 import threading
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
@@ -28,7 +29,10 @@ def test_actual_held_photo_without_readable_nik_never_auto_captures(real_models,
     assert not result['ready'] and not result['complete'] and result['warnings']
 
 
-def test_auto_endpoint_checks_prerequisites_and_does_not_consume_session(client,real_models,ktp_image,face_image):
+def test_auto_endpoint_checks_prerequisites_and_does_not_consume_session(client,real_models,ktp_image,face_image,monkeypatch):
+    # Test the throttle interval independently of CPU/OCR duration, which may
+    # legitimately exceed 500 ms on a loaded machine.
+    monkeypatch.setattr('app.controller.verification.time', SimpleNamespace(monotonic=lambda: 100.0))
     verifier=client.app.state.verifier
     verifier.ocr=real_models.ocr;verifier.face=real_models.face
     public=client.post('/api/sessions').json();sid=public['id']

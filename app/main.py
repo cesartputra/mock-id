@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,7 +38,7 @@ async def lifespan(app):
 
 
 def create_app(data_directory=DATA):
-    app = FastAPI(title='mock-id local identity verification', version='2.4.0', lifespan=lifespan,
+    app = FastAPI(title='mock-id local identity verification', version='2.4.1', lifespan=lifespan,
                   telemetry={'tracing': False, 'metrics': False, 'logs': False, 'operation_spans': False, 'auto_configure': False})
     app.state.data_directory = data_directory
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
@@ -55,7 +57,15 @@ def create_app(data_directory=DATA):
                 return JSONResponse({'detail': 'Request melebihi batas 32 MB.'}, status_code=413)
         except ValueError:
             return JSONResponse({'detail': 'Content-Length tidak valid.'}, status_code=400)
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            if not request.url.path.startswith('/api/'):
+                raise
+            error_id = uuid.uuid4().hex[:12]
+            logging.getLogger(__name__).exception('API failure %s at %s', error_id, request.url.path)
+            response = JSONResponse({'detail': 'Server mengalami gangguan. Coba kembali; jika berulang, periksa log server.',
+                                     'code': 'internal_error', 'request_id': error_id}, status_code=500)
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'

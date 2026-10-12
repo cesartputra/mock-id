@@ -3,12 +3,15 @@ import json
 import time
 import secrets
 import math
+import logging
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 
 from app.config import MAX_IMAGE_BYTES, MAX_FRAME_BYTES, MAX_FRAMES, MAX_ATTEMPTS
 from app.model.repository import utcnow
@@ -207,10 +210,18 @@ def create_session(request: Request):
 def retry_session(session_id: str, request: Request):
     sessions, _, repository = services(request)
     with sessions.lock:
-        sessions.check_revision(sessions.get(session_id), request)
-        plan = sessions.retry_plan(sessions.get(session_id))
-        session = sessions.retry(session_id)
-    repository.audit('Percobaan ulang', f'Percobaan {session.attempt}; nonce server diperbarui.', session.id)
+        session = sessions.get(session_id)
+        sessions.check_revision(session, request)
+        plan = sessions.retry_plan(session)
+        previous = vars(session).copy()
+        try:
+            session = sessions.retry(session_id)
+            repository.audit('Percobaan ulang', f'Percobaan {session.attempt}; nonce server diperbarui.', session.id)
+        except Exception:
+            # A failed audit must not strand the client with an old nonce or
+            # clear its retry evidence before the new nonce can be returned.
+            vars(session).update(previous)
+            raise
     return {**session.public(), 'retry': plan}
 
 
@@ -223,9 +234,15 @@ class Retake(BaseModel):
 def retake(session_id: str, body: Retake, request: Request):
     sessions, _, repository = services(request)
     with sessions.lock:
-        sessions.check_revision(sessions.get(session_id), request)
-        session = sessions.reset(session_id, body.stage, body.nonce)
-    repository.audit('Capture diambil ulang', f'Tahap {body.stage}; generasi {session.revision}; nonce diperbarui.', session.id)
+        session = sessions.get(session_id)
+        sessions.check_revision(session, request)
+        previous = vars(session).copy()
+        try:
+            session = sessions.reset(session_id, body.stage, body.nonce)
+            repository.audit('Capture diambil ulang', f'Tahap {body.stage}; generasi {session.revision}; nonce diperbarui.', session.id)
+        except Exception:
+            vars(session).update(previous)
+            raise
     return session.public()
 
 
@@ -374,6 +391,17 @@ async def verify(session_id: str, request: Request, nonce: str = Form(...),
         result = await run_in_threadpool(verifier.run, session, face_image, holding_image, decoded_frames, metadata)
         session.last_result = result
         return result
+    except Exception:
+        error_id = uuid.uuid4().hex[:12]
+        logging.getLogger(__name__).exception('Verification failure %s for session %s', error_id, session.id)
+        reason = 'Pemeriksaan belum dapat diselesaikan atau disimpan. Coba jalankan model kembali; capture yang sudah lolos dipertahankan.'
+        retry = {'stage': 'verify', 'label': 'Jalankan pemeriksaan ulang', 'reason': reason}
+        # The nonce stays consumed. A bounded /retry rotates it while retaining
+        # the document and validated liveness proof, even if persistence failed.
+        with sessions.lock:
+            session.last_result = {'status': 'technical', 'reason': reason, 'retry': retry}
+        return JSONResponse({'detail': reason, 'code': 'verification_unavailable',
+                             'request_id': error_id, 'retry': retry}, status_code=503)
     finally:
         with sessions.lock:
             session.processing = False

@@ -155,18 +155,7 @@ async function api(path, options = {}) {
       ...options.headers,
     },
   });
-  const body = await response.json();
-  if (!response.ok) {
-    const detail = Array.isArray(body.detail)
-      ? body.detail
-          .map((e) => `${e.loc?.slice(-1)[0] || "Input"}: ${e.msg}`)
-          .join("; ")
-      : body.detail;
-    const error = new Error(detail || "Layanan lokal mengalami gangguan.");
-    error.status = response.status;
-    throw error;
-  }
-  return body;
+  return readApiResponse(response);
 }
 async function reloadWorkspace() {
   workspace = await api("/workspace");
@@ -221,8 +210,10 @@ async function navigate(target) {
     render();
     window.scrollTo(0, 0);
   } catch (e) {
+    document.body.classList.toggle("public-mode", publicPages.has(page));
+    updateNav();
     $("#app").innerHTML =
-      `${head("Backend belum terhubung", "Pastikan server Python sudah berjalan melalui npm start.")}<div class="callout">${esc(e.message)}</div>`;
+      `${head(e.status >= 500 ? "Server mengalami gangguan" : "Backend belum terhubung", e.status >= 500 ? "Server belum dapat menyelesaikan permintaan. Coba kembali dan periksa log server." : "Pastikan server Python sudah berjalan melalui npm start.")}<div class="callout" role="alert">${esc(e.message)}</div>`;
   }
 }
 async function newFlow(show = true) {
@@ -491,16 +482,27 @@ async function runVerification() {
     );
   if (!flow.holdingBlob || !flow.selfieBlob || !flow.livenessResult.proof_token)
     return;
-  const data = new FormData();
-  data.append("nonce", flow.session.nonce);
-  data.append("proof_token", flow.livenessResult.proof_token);
-  data.append("selfie", flow.selfieBlob, "selfie.jpg");
-  data.append("holding", flow.holdingBlob, "holding.jpg");
   await withBusy(async () => {
-    flow.result = await api(`/sessions/${flow.session.id}/verify`, {
-      method: "POST",
-      body: data,
-    });
+    if (flow.pendingVerificationRetry) {
+      flow.session = await api(`/sessions/${flow.session.id}/retry`, {
+        method: "POST",
+      });
+      flow.pendingVerificationRetry = false;
+    }
+    const data = new FormData();
+    data.append("nonce", flow.session.nonce);
+    data.append("proof_token", flow.livenessResult.proof_token);
+    data.append("selfie", flow.selfieBlob, "selfie.jpg");
+    data.append("holding", flow.holdingBlob, "holding.jpg");
+    try {
+      flow.result = await api(`/sessions/${flow.session.id}/verify`, {
+        method: "POST",
+        body: data,
+      });
+    } catch (error) {
+      if (error.retry?.stage === "verify") flow.pendingVerificationRetry = true;
+      throw error;
+    }
     flow.step = 4;
     await reloadWorkspace();
   });
@@ -519,6 +521,7 @@ async function prepareCapture(stage, keepInput = false) {
     });
     if (flow !== currentFlow) return;
     flow.session = updated;
+    flow.pendingVerificationRetry = false;
     flow.result = null;
     CaptureState.reset(
       flow,
@@ -549,6 +552,7 @@ async function retry(stage = null) {
       if (flow !== currentFlow) return;
       stage = updated.retry.stage;
       flow.session = updated;
+      flow.pendingVerificationRetry = false;
       flow.retryPlan = updated.retry;
       CaptureState.reset(flow, stage, (url) => {
         URL.revokeObjectURL(url);

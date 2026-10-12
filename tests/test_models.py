@@ -1,4 +1,5 @@
 import cv2
+import json
 import numpy as np
 import pytest
 from pathlib import Path
@@ -70,6 +71,9 @@ def test_actual_hands(real_models,face_image):
     image=cv2.imread(str(Path(__file__).parent/'fixtures'/'hands.png'))
     detected=real_models.landmarks.hand_near_card(image,[0,0,image.shape[1],image.shape[0]])
     assert detected['hands_detected']>0 and detected['passed']
+    assert type(detected['passed']) is bool
+    assert json.loads(json.dumps(detected)) == detected
+    assert json.loads(json.dumps(absent)) == absent
 
 
 def test_card_geometry(ktp_image):

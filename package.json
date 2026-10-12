@@ -1,6 +1,6 @@
 {
   "name": "mock-id",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "private": true,
   "description": "Local open source OCR, biometric verification and KYC with FastAPI MVC",
   "scripts": {

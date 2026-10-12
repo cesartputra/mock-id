@@ -71,7 +71,10 @@ class LandmarkService:
         hands = self.hands(image)
         x, y, w, h = box
         margin = max(w,h)*.16
-        close = sum(sum(x-margin <= p[0] <= x+w+margin and y-margin <= p[1] <= y+h+margin for p in points) >= 3 for points in hands)
+        # NumPy comparisons produce np.bool_; Python sum can then produce an
+        # np.int64, making `close > 0` impossible to serialize as JSON. Keep
+        # model arrays internal and expose only native Python scalar metrics.
+        close = sum(sum(bool(x-margin <= p[0] <= x+w+margin and y-margin <= p[1] <= y+h+margin) for p in points) >= 3 for points in hands)
         return {'passed':close>0,'hands_detected':len(hands),'hands_near_card':int(close),
                 'model':'OpenCV Zoo MediaPipe Palm + Hand ONNX CPU','mode':'real',
                 'scope':'Kedekatan landmark tangan dengan bingkai kartu; bukan bukti keaslian fisik dokumen.'}

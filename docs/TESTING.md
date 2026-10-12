@@ -5,7 +5,7 @@ Jalankan `npm run setup:test`, `npm run check`, `npm test`, dan `npm run benchma
 ## Hasil pengujian
 
 - `npm run check`: lulus pemeriksaan syntax Python dan JavaScript.
-- `npm test` (3.0.2): **149 pytest lulus, 2 dilewatkan; 40 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
+- `npm test` (3.0.3): **158 pytest lulus, 2 dilewatkan; 44 tes Node lulus**. Satu peringatan dependency Starlette/httpx tentang deprecation, bukan kegagalan tes.
 - Dua skip: native NVIDIA CUDA (Mac tidak memiliki CUDA EP/GPU) dan PostgreSQL server (tidak ada MOCK_ID_POSTGRES_TEST_URL). Bobot/model lokal tersedia; tidak ada tes model dilewatkan karena bobot hilang.
 - CPU/CoreML Swin V2 benar-benar dijalankan: parity logits maksimum `4.291534423828125e-06`, probabilitas `8.226236358765959e-10`. Profiler mengamati 2050 event CoreML dan 4760 event CPU pada profil hybrid, dibanding CPU-only 10280 event. Median tujuh warmed calls CPU 0,2300 detik; CoreML 0,2419 detik. Tiga varian gambar astronaut publik. Angka ini bukan FPS kamera, atribusi fisik GPU/ANE, akurasi identitas atau ketahanan spoof.
 
@@ -50,3 +50,15 @@ Tes Node menjalankan fungsi `monitorCamera`, `recordChallenges` dan `drawFaceDet
 Inferensi model nyata, penolakan foto datar bergerak, replay/proof binding, kontinuitas wajah dan reset setelah penutup/spoof tetap dicakup oleh suite Python. Tidak ada perubahan threshold model atau pelolosan otomatis dari UI. Pengujian protokol ini membuktikan perbaikan alur pengiriman; belum mengukur akurasi atau FPS pada kamera fisik pengguna.
 
 Validasi 3.0.2: `npm run check` dan `npm test` lulus (149 Python, 40 Node, 2 skip lingkungan). Empat tes preview/overlay dijalankan terhadap sumber `app.js` sebelum perbaikan (`c6b6421`) dan semuanya gagal sebagaimana diharapkan; keempatnya lulus pada sumber baru.
+
+## Pembaruan 3.0.3: PAD meragukan dan UI tanpa login petugas
+
+Input RGB, normalisasi ImageNet, resize dan kelas live=0/spoof=1 dibandingkan dengan sumber CVPR yang dipin dan sesuai; tidak ada bukti kesalahan label/konversi CoreML dari screenshot pemohon. Screenshot berisi overlay/kompresi bukan frame webcam mentah, dan tidak dipakai sebagai data kalibrasi atau fixture akurasi.
+
+Mode demo tanpa artefak kalibrasi yang disetujui memisahkan bukti gerakan dan keputusan PAD. Model PAD tetap dijalankan; skor rendah tetap disimpan dan kontrol PAD tetap gagal. Gerakan netral/kedip/putar/senyum dan kontinuitas/proof masih wajib. Hasil PAD meragukan dengan bukti/identitas lengkap masuk MANUAL_PENDING, termasuk bila raw routing score rendah, mengambil kuota hari ini, dan tidak dapat mengunduh PDF sebelum review. Produksi dan profil terkalibrasi memakai aturan PAD ketat. PAD foto memegang KTP kini juga diperiksa pada final verify, sehingga capture foto itu tidak bisa menyembunyikan sinyal yang memerlukan review.
+
+Tes protokol memeriksa warning review yang tetap tampak, masker tidak diloloskan oleh review PAD, proof gerakan yang tidak mengklaim PAD lulus, produksi ketat, gerakan gagal yang tidak berubah menjadi review, kuota hari ini, PDF tertahan, syarat proof/identitas, dan PAD pada foto memegang KTP. Tes model nyata/foto datar/replay existing tetap lulus. Frame preview dan tantangan memakai JPEG 0.95 hingga 1920 px tanpa upscaling; tes klien memeriksa kontrak encoding yang sama dan backpressure satu request.
+
+UI tidak menampilkan akses/login/workspace petugas. Bootstrap browser tetap memakai cookie guest yang terpisah; API petugas/integrasi tetap berotorisasi dan tidak dibuka menjadi operator anonim. Tes Node menjalankan deep-link dan bootstrap aktual. Browser QA pada database disposable localhost:4187 memverifikasi beranda tanpa login, link lama #account kembali ke #home, lalu Pendaftaran dengan tiga jenis debitur. Kamera pemohon tidak diaktifkan. Bukti tampilan: `outputs/public-ui-without-staff-login.png` di workspace chat.
+
+Validasi 3.0.3: `npm run check` lulus; 158 Python dan 44 Node lulus, 2 skip lingkungan. Setelah koreksi bootstrap tombol help yang dihapus dari shell, browser diperiksa ulang dan seluruh tes Node serta syntax check lulus. Pengujian ini membuktikan routing/status/otorisasi, bukan peningkatan akurasi Swin terhadap wajah pemohon; kalibrasi webcam masih diperlukan.

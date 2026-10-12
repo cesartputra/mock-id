@@ -30,68 +30,12 @@
         ></a
       >
       <nav aria-label="Menu layanan">
-        <button data-page="account">Akses petugas</button>
         <button data-page="home">Beranda</button
         ><button data-public-info>Informasi</button
-        ><button data-page="status">Status layanan</button
-        ><button data-page="dashboard" class="operator-link">
-          Workspace operator ↗
-        </button>
+        ><button data-page="status">Status layanan</button>
       </nav>
     </header>
-    <aside class="sidebar">
-      <a class="brand" href="#dashboard" aria-label="iDeb Verify beranda"
-        ><span class="brand-icon">iD<span>✓</span></span
-        ><span
-          >iDeb<span class="brand-light"> Verify</span
-          ><small>IDENTITY WORKSPACE</small></span
-        ></a
-      >
-      <div class="workspace">
-        <span class="workspace-icon">V</span>
-        <div>Verifikasi iDebKu<small>Real inference workspace</small></div>
-        <span class="green-dot"></span>
-      </div>
-      <div class="nav-caption">WORKSPACE</div>
-      <nav aria-label="Menu utama">
-        <button data-page="dashboard"></button
-        ><button data-page="verify"></button><button data-page="queue"></button
-        ><button data-page="audit"></button>
-      </nav>
-      <div class="nav-caption second">KONFIGURASI</div>
-      <nav aria-label="Konfigurasi"><button data-page="modules"></button></nav>
-      <div class="sidebar-bottom">
-        <div class="local-card">
-          <span class="green-dot"></span><strong>Lingkungan lokal</strong>
-          <p>Model berjalan lokal. Dukcapil memakai mock.</p>
-          <span class="small-pill">LOCAL INFERENCE</span>
-        </div>
-        <div class="profile">
-          <span class="avatar">AP</span>
-          <div>
-            <span id="profile-login">Akun operator</span
-            ><small id="profile-role">Belum masuk</small>
-          </div>
-          <span class="profile-dots">•••</span>
-        </div>
-      </div>
-    </aside>
     <div class="main-shell">
-      <header class="topbar">
-        <div class="breadcrumb">
-          Workspace <span>/</span> <strong id="crumb">Ringkasan</strong>
-        </div>
-        <div class="top-actions">
-          <button class="button link" data-page="home">
-            Halaman pemohon ↗
-          </button>
-          <span class="local-status"
-            ><span class="green-dot"></span> Local inference</span
-          ><button class="icon-button" id="help" aria-label="Tentang demo">
-            ?</button
-          ><span class="avatar small">AP</span>
-        </div>
-      </header>
       <main id="app"></main>
       <footer class="public-footer">
         <div>
@@ -106,10 +50,6 @@
           >Referensi visual iDebKu • Prototipe integrasi, bukan layanan resmi
           OJK.</small
         >
-      </footer>
-      <footer class="operator-footer">
-        iDeb Verify <span>•</span> Demo model open source
-        <span class="footer-right">Tidak terhubung ke OJK atau Dukcapil</span>
       </footer>
     </div>
     <dialog id="modal"></dialog>

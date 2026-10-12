@@ -111,6 +111,7 @@ class LiveCapture:
         self.selfie_hash = None
         self.selfie_seq = None
         self.pad_min = 1.0
+        self.pad_review_enabled = False
         self.cosine_min = 1.0
         self.spoof_strikes = 0
         self.rules = None
@@ -157,6 +158,10 @@ class LiveCapture:
             "frames": self.sequence,
             "selfie_seq": self.selfie_seq,
             "pad_probability": self.pad_min,
+            "pad_passed": self.pad_min
+            >= (self.rules or {}).get("pad_probability", 0.8),
+            "pad_review_required": self.pad_review_enabled
+            and self.pad_min < (self.rules or {}).get("pad_probability", 0.8),
             "continuity": [self.cosine_min],
             "rules": self.rules,
             "stream": True,
@@ -168,10 +173,24 @@ class LiveCapture:
             "model": "PIPNet 68 / ONNX CPU",
             "mode": "real",
         }
-        result["reason"] = (
-            "Gerakan dan anti-spoof terpenuhi."
-            if result["passed"]
-            else "Ikuti instruksi gerakan di kamera."
+        # The proof may attest measured motion with PAD pending only under the
+        # explicit demo review policy. Strict mode still requires PAD passing.
+        motion_complete = result["passed"]
+        result["passed"] = motion_complete and (
+            result["pad_passed"] or result["pad_review_required"]
         )
-        result["done"] = result["passed"]
+        result["reason"] = (
+            "Gerakan terbaca. Penilaian PAD memerlukan pemeriksaan manual; KYC belum disetujui."
+            if result["passed"] and result["pad_review_required"]
+            else (
+                "Gerakan dan anti-spoof terpenuhi."
+                if result["passed"]
+                else "Ikuti instruksi gerakan di kamera."
+            )
+        )
+        result["done"] = motion_complete
+        if motion_complete and not result["passed"]:
+            result["reason"] = (
+                "Pemeriksaan anti-spoof belum memenuhi ambang; KYC belum disetujui."
+            )
         return result

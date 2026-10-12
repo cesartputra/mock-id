@@ -48,7 +48,9 @@ function camera(kind = "liveness") {
     },
     cameraFeedback: new CaptureFeedback(),
     cameraAutoGate: { reset: () => {}, observe: () => false },
-    captureBlob: async () => {
+    captureBlob: async (maxSide, quality) => {
+      assert.equal(maxSide, 1920);
+      assert.equal(quality, 0.95);
       const blob = new Blob([`public protocol frame ${events.sent.length}`]);
       events.sent.push(blob);
       return blob;
@@ -138,6 +140,22 @@ test("missing face is rechecked and recovery still requires two fresh server che
   await context.monitorCamera(7);
   assert.equal(events.sent.length, 3);
   assert.equal(events.starts, 1);
+});
+
+test("PAD review starts measured motion but keeps the warning and orange face box", async () => {
+  const { context, events } = camera();
+  context.inspectBlob = async () => ({
+    ready: true,
+    pad_review_required: true,
+    warnings: [{ code: "pad_review", message: "Diperiksa manual" }],
+    face_box: [20, 20, 100, 100],
+    image_size: [1920, 1080],
+  });
+  await context.monitorCamera(7);
+  await context.monitorCamera(7);
+  assert.equal(events.starts, 1);
+  assert.equal(events.drawn[1][2], false);
+  assert.equal(events.feedback[1].warnings[0].code, "pad_review");
 });
 
 for (const kind of ["document", "holding"])

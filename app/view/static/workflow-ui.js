@@ -27,11 +27,6 @@ const approvedStates = [
   "SLIK_READY",
 ];
 const keyForAction = () => crypto.randomUUID();
-function accountView() {
-  if (principal)
-    return `<section class="public-form-panel"><h1>Akun petugas</h1><p>${esc(principal.login)} · ${esc(principal.role)}</p><button class="button primary" data-page="${principal.role === "admin" ? "dashboard" : "queue"}">Workspace petugas</button><button class="button" data-logout>Keluar</button></section>`;
-  return `<section class="public-form-panel"><span class="home-kicker">AKSES DEMO LOKAL</span><h1>Masuk sebagai petugas</h1><p>Halaman ini untuk helpdesk dan administrator. Pemohon langsung memilih Pendaftaran tanpa login.</p><form id="account-form"><div class="field"><label for="account-login">Nama akun</label><input id="account-login" name="login" autocomplete="username" required minlength="3" maxlength="80"></div><div class="field"><label for="account-password">Kata sandi</label><input id="account-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button class="button primary" name="action" value="login">Masuk</button></div></form><p class="state-note">Akun helpdesk/administrator dibuat melalui perintah administrator di terminal. Email bukan kanal pengiriman hasil pada demo ini.</p></section>`;
-}
 function applicationPanel(app, operator = false) {
   const routing = app.routing || {};
   const manual = app.state === "MANUAL_PENDING";
@@ -252,27 +247,7 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   try {
-    if (button.hasAttribute("data-logout")) {
-      await api("/auth/logout", { method: "POST" });
-      authEpoch++;
-      stopDeliveryWatch();
-      stopCamera();
-      $("#modal").close();
-      releasePreviews();
-      principal = null;
-      applicationRows = [];
-      selectedApplication = null;
-      operatorMetrics = null;
-      workspace = {
-        records: [],
-        audit: [],
-        settings: {},
-        health: { ready: false, files: {} },
-      };
-      flow = null;
-      selectedApplication = null;
-      await navigate("account");
-    } else if (button.dataset.application)
+    if (button.dataset.application)
       await showApplication(button.dataset.application);
     else if (button.dataset.tryToday) {
       await api(`/applications/${button.dataset.tryToday}/manual/try-today`, {
@@ -341,7 +316,6 @@ document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (
     ![
-      "account-form",
       "manual-booking-form",
       "manual-review-form",
       "capacity-config-form",
@@ -352,27 +326,7 @@ document.addEventListener("submit", async (event) => {
   if (!form.checkValidity()) return form.reportValidity();
   const data = Object.fromEntries(new FormData(form));
   try {
-    if (form.id === "account-form") {
-      const body = { login: data.login, password: data.password };
-      if (event.submitter?.value === "signup")
-        await api("/auth/signup", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-      authEpoch++;
-      principal = (
-        await api("/auth/login", { method: "POST", body: JSON.stringify(body) })
-      ).principal;
-      flow = null;
-      selectedApplication = null;
-      await navigate(
-        principal.role === "helpdesk"
-          ? "queue"
-          : principal.role === "admin"
-            ? "dashboard"
-            : "home",
-      );
-    } else if (form.id === "manual-booking-form") {
+    if (form.id === "manual-booking-form") {
       await api(
         `/applications/${form.dataset.id}/manual/${form.dataset.move === "true" ? "move" : "reserve"}`,
         {

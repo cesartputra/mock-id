@@ -1,5 +1,7 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.0.3**: frame preview dan liveness memakai kualitas yang sama (hingga 1920 px, JPEG 0.95, tanpa memperbesar resolusi kamera). Pada mode demo tanpa kalibrasi disetujui, skor PAD rendah diperlakukan sebagai perlu pemeriksaan manual. Gerakan tetap harus terbaca dari model; PAD tetap diperiksa pada rekaman, selfie dan foto memegang KTP. PAD yang belum terpenuhi menahan persetujuan otomatis/PDF dan otomatis mengambil kuota pemeriksaan hari ini bila tersedia. Produksi dan profil terkalibrasi mempertahankan aturan PAD ketat. Menu, form login petugas, dan halaman workspace petugas di UI dihapus; link lama diarahkan ke beranda. Sesudah pull, restart server dan reload browser.
+
 Pembaruan **3.0.2**: memperbaiki regresi pengiriman frame liveness dari versi 3.0. Filter blur/cahaya di browser tidak lagi menghentikan preview atau stream liveness; server menerima sampel berurutan dan tetap memeriksa kualitas, penutup wajah, PAD, kontinuitas dan gerakan. Label wajah terdeteksi dipisahkan dari status siap melanjutkan. Kotak wajah lama tidak lagi memblokir pemeriksaan frame baru. Sesudah pull di `development/slik-verification`, hentikan server lama, jalankan `npm start`, lalu reload browser. Tidak perlu mengunduh model baru untuk pembaruan ini.
 
 Pembaruan **3.0.1**: detektor wajah yang kehilangan frame tidak menghabiskan batas tiga rekaman liveness. Menu Permohonan saya dihapus; hasil yang sudah `SLIK_READY` otomatis mengunduh PDF dari backend. Identitas debitur (nama, NIK, tanggal lahir) berasal dari bukti KTP server; hanya data keuangan demo diacak. Unduh ulang memakai laporan tersimpan yang sama. Sesudah pull, hentikan server lama, jalankan `npm run setup` (dependency ReportLab), `npm start`, lalu reload browser.
@@ -17,7 +19,7 @@ npm run setup
 npm start
 ```
 
-Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. **Akses petugas** khusus helpdesk/admin yang dibuat melalui terminal; tidak ada credential bawaan:
+Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. UI hanya menampilkan layanan pemohon. Pemeriksaan manual tetap tersedia lewat API integrasi berotorisasi; akun API helpdesk/admin dibuat melalui terminal, tanpa credential bawaan:
 
 ```bash
 npm run user:create -- --login helpdesk-demo --role helpdesk

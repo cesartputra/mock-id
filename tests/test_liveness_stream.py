@@ -377,3 +377,44 @@ def test_mask_and_spoof_still_reset_gesture_after_soft_gap(client, monkeypatch):
     first=verifier.inspect_liveness_frame(capture,None,'y',1)
     second=verifier.inspect_liveness_frame(capture,None,'z',2)
     assert not first['done'] and second['done'] and not second['passed']
+
+
+def test_demo_preview_pad_uncertainty_keeps_face_quality_separate(client, monkeypatch):
+    from types import SimpleNamespace
+    verifier=client.app.state.verifier
+    verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':True,'face_box':[20,20,100,100],'warnings':[]})
+    verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
+    verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
+    result=verifier.inspect_capture(None)
+    assert result['ready'] and result['pad_review_required']
+    assert result['warnings'][0]['code']=='pad_review'
+    verifier.pad_review_enabled=False
+    strict=verifier.inspect_capture(None)
+    assert not strict['ready'] and strict['warnings'][0]['code']=='spoof_risk'
+
+
+def test_demo_preview_pad_review_never_overrides_mask(client):
+    from types import SimpleNamespace
+    verifier=client.app.state.verifier
+    verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':False,'face_box':[20,20,100,100],'warnings':[{'code':'mask','message':'Lepaskan masker'}]})
+    verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
+    verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
+    result=verifier.inspect_capture(None)
+    assert not result['ready'] and result['pad_review_required']
+    assert result['warnings'][0]['code']=='mask'
+
+
+def test_completed_motion_with_uncertain_pad_is_review_only_not_strict_proof():
+    capture=LiveCapture(['blink'])
+    capture.rules={'pad_probability':.8}
+    capture.pad_min=.01
+    neutral(capture.gestures)
+    capture.gestures.update(metrics(blink=.13))
+    capture.gestures.update(metrics())
+    capture.gestures.update(metrics())
+    result=capture.result({'ready':True})
+    assert result['done'] and not result['passed'] and not result['pad_passed']
+    capture.pad_review_enabled=True
+    review=capture.result({'ready':True})
+    assert review['done'] and review['passed'] and review['pad_review_required']
+    assert not review['pad_passed'] and review['live']['passed']

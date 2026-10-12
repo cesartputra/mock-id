@@ -16,7 +16,6 @@ const purposeLabels = {
 };
 const publicPages = new Set([
   "home",
-  "account",
   "result",
   "registration",
   "verify",

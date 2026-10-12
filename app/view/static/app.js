@@ -32,17 +32,12 @@ const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name] || shapes.verify}</svg>`;
 const names = {
   home: "Beranda",
-  account: "Akses petugas",
   result: "Hasil verifikasi",
   registration: "Pendaftaran",
   postkyc: "Data permohonan",
   receipt: "Bukti pendaftaran",
   status: "Status layanan",
-  dashboard: "Ringkasan",
   verify: "Verifikasi baru",
-  queue: "Antrean manual",
-  audit: "Audit aktivitas",
-  modules: "Modul & konfigurasi",
 };
 const statuses = {
   pass: ["Kontrol lokal terpenuhi", "green"],
@@ -150,15 +145,7 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "X-Local-Client": "mock-id",
-      "X-Workspace-Mode": [
-        "account",
-        "dashboard",
-        "queue",
-        "audit",
-        "modules",
-      ].includes(page)
-        ? "operator"
-        : "public",
+      "X-Workspace-Mode": "public",
       ...(flow && path.startsWith(`/sessions/${flow.session.id}/`)
         ? { "X-Capture-Revision": String(flow.session.revision) }
         : {}),
@@ -169,19 +156,12 @@ async function api(path, options = {}) {
     },
   });
   const result = await readApiResponse(response);
-  if (
-    epoch !== authEpoch &&
-    !["/auth/login", "/auth/signup", "/auth/logout"].includes(path)
-  )
+  if (epoch !== authEpoch)
     throw new Error("Akun telah berubah; respons lama diabaikan.");
   return result;
 }
 async function reloadWorkspace() {
-  const mode = ["account", "dashboard", "queue", "audit", "modules"].includes(
-    page,
-  )
-    ? "operator"
-    : "public";
+  const mode = "public";
   if (accessMode && accessMode !== mode) {
     authEpoch++;
     stopCamera();
@@ -206,26 +186,15 @@ async function reloadWorkspace() {
     }
     throw error;
   }
-  if (["admin", "helpdesk"].includes(principal.role)) {
-    [applicationRows, capacityCalendar] = await Promise.all([
-      api("/applications"),
-      api("/manual/calendar"),
-    ]);
-  } else {
-    applicationRows = [];
-    capacityCalendar = null;
-  }
-  if (principal.role === "admin" || principal.role === "helpdesk")
-    workspace = await api("/workspace");
-  else
-    workspace = {
-      records: [],
-      audit: [],
-      settings: {},
-      health: await api("/health"),
-    };
-  operatorMetrics =
-    principal.role === "admin" ? await api("/operator/metrics") : null;
+  applicationRows = [];
+  capacityCalendar = null;
+  workspace = {
+    records: [],
+    audit: [],
+    settings: {},
+    health: await api("/health"),
+  };
+  operatorMetrics = null;
 }
 function badge(status) {
   const [text, color] = statuses[status] || [status, "gray"];
@@ -250,13 +219,12 @@ function updateNav() {
     if (key === page) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   }
-  $("#crumb").textContent = names[page];
+  if ($("#crumb")) $("#crumb").textContent = names[page];
 }
 function render() {
   document.body.classList.toggle("public-mode", publicPages.has(page));
   updateNav();
   const views = {
-    account: accountView,
     result: deliveryView,
     home: publicHome,
     registration: publicRegistration,
@@ -283,12 +251,8 @@ async function navigate(target) {
   page = names[target] ? target : "home";
   try {
     await reloadWorkspace();
-    if (!principal && page !== "account") {
-      page = "account";
-      history.replaceState(null, "", "#account");
-      render();
-      return;
-    }
+    if (!principal)
+      throw new Error("Sesi pemohon belum tersedia. Muat ulang halaman.");
     if (
       principal?.role === "applicant" &&
       ["dashboard", "queue", "audit", "modules"].includes(page)
@@ -957,10 +921,9 @@ async function monitorCamera(token) {
       $("#camera-feedback").className = "capture-feedback warning";
       return;
     }
-    const blob = await captureBlob(
-      kind === "liveness" ? 640 : 1920,
-      kind === "liveness" ? 0.75 : 0.95,
-    );
+    // Preserve face texture for PAD. Preview and gesture inference must use
+    // the same encoding; resizing/JPEG artifacts can shift model scores.
+    const blob = await captureBlob(1920, 0.95);
     if (token !== cameraToken || cameraCheckingPaused) return;
     const result =
       kind === "liveness"
@@ -971,7 +934,7 @@ async function monitorCamera(token) {
     drawFaceDetection(
       result.face_box,
       result.image_size,
-      result.ready,
+      result.ready && !result.pad_review_required,
       result.card_box,
     );
     const feedback = cameraFeedback.update(result, performance.now());
@@ -1132,7 +1095,7 @@ async function recordChallenges() {
       const frameStarted = performance.now();
       // Send every sampled frame. Server visibility, PAD and temporal rules
       // decide whether it contributes evidence; a browser hint cannot skip it.
-      const blob = await captureBlob(960, 0.9);
+      const blob = await captureBlob(1920, 0.95);
       const data = new FormData();
       data.append("capture_nonce", capture.capture_nonce);
       data.append("seq", String(seq));
@@ -1155,7 +1118,7 @@ async function recordChallenges() {
       drawFaceDetection(
         result.feedback.face_box,
         result.image_size,
-        result.feedback.ready,
+        result.feedback.ready && !result.feedback.pad_review_required,
       );
       showCameraFeedback(
         cameraFeedback.update(result.feedback, performance.now()),
@@ -1355,7 +1318,6 @@ document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (
     [
-      "account-form",
       "manual-booking-form",
       "manual-review-form",
       "capacity-config-form",
@@ -1421,7 +1383,7 @@ $("#modal").addEventListener("close", () => {
   stopCamera();
   cleanupExport();
 });
-$("#help").addEventListener("click", help);
+$("#help")?.addEventListener("click", help);
 window.addEventListener("hashchange", () => {
   if (location.hash.slice(1) !== page) navigate(location.hash.slice(1));
 });

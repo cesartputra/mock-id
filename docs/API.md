@@ -1,6 +1,6 @@
 # Kontrak API demo / integrasi induk
 
-OpenAPI aktual: `/openapi.json`, Swagger `/docs`. MVC: `app/model`, `app/view`, `app/controller`, `app/services`. Semua `/api/*` memerlukan cookie kapabilitas HttpOnly `mock_id_guest` untuk pemohon, `mock_id_session` untuk petugas, atau bearer opaque session; login/signup/guest pengecualian. `POST /auth/guest` otomatis membuat/memulihkan principal browser tanpa password. `X-Workspace-Mode: public|operator` memilih cookie; bearer tetap mempunyai prioritas. Tidak ada login pemohon pada UI. **`X-Local-Client: mock-id` hanya marker origin/CSRF**, diwajibkan untuk perubahan, bukan autentikasi. Semua request produksi harus HTTPS. Endpoint browser same-origin: widget ditempel lewat reverse proxy origin aplikasi induk, bukan public iframe dengan credential/token pada URL.
+OpenAPI aktual: `/openapi.json`, Swagger `/docs`. MVC: `app/model`, `app/view`, `app/controller`, `app/services`. Semua `/api/*` memerlukan cookie kapabilitas HttpOnly `mock_id_guest` untuk pemohon, `mock_id_session` untuk petugas, atau bearer opaque session; login/signup/guest pengecualian. `POST /auth/guest` otomatis membuat/memulihkan principal browser tanpa password. `X-Workspace-Mode: public|operator` memilih cookie; bearer tetap mempunyai prioritas. UI tidak menyediakan login pemohon maupun petugas; seluruh request browser memakai mode public. Operasi petugas/integrasi dilakukan oleh aplikasi induk atau klien API yang berotorisasi. **`X-Local-Client: mock-id` hanya marker origin/CSRF**, diwajibkan untuk perubahan, bukan autentikasi. Semua request produksi harus HTTPS. Endpoint browser same-origin: widget ditempel lewat reverse proxy origin aplikasi induk, bukan public iframe dengan credential/token pada URL.
 
 ## Peran dan endpoint
 
@@ -53,7 +53,7 @@ Snapshot contoh struktur (nilai routing berasal dari model, tidak boleh dikirim 
     "demo_routing_score": null,
     "routing_score": null,
     "calibrated": false,
-    "policy_version": "demo-routing-v1",
+    "policy_version": "demo-routing-v2-pad-review",
     "scope": "synthetic_only"
   },
   "identity_verified": false,
@@ -96,3 +96,7 @@ Endpoint legacy `/records/{id}/review|schedule` menolak dengan 409; status appro
 Guest capability hanya mengotorisasi kepemilikan resource demo, bukan identitas hukum. Produksi tetap membutuhkan adapter/prosedur identitas, kewenangan dan kanal penerimaan yang disetujui; tidak otomatis sah karena guest cookie tersedia. Cookie tidak pernah dimasukkan URL atau localStorage.
 
 Frontend tidak membaca daftar seluruh applications pemohon sebagai menu; status permohonan tunggal ditemukan melalui APP ID + cookie pemilik. Auto download deduplicated per application/revision/issuance pada sessionStorage; storage gagal memakai memory fallback. Manual retry tidak mengabaikan server authorization.
+
+## Status gerakan dan PAD (3.0.3)
+
+`/liveness/frame` mengembalikan `pad_passed` dan `pad_review_required`. Pada demo belum terkalibrasi, `passed=true` bersama `pad_review_required=true` berarti bukti gerakan terukur sudah lengkap dan terikat selfie; KYC/PAD belum disetujui. `/verify` tetap menjalankan model PAD pada selfie/foto KYC, menyimpan kontrol PAD gagal dan merutekan ke pemeriksaan manual. Klien tidak boleh memakai flag gerakan sebagai otorisasi PDF/handoff. Hanya keputusan application yang masih berlaku dan berwenang dapat mengotorisasi hasil. Produksi/profil terkalibrasi tetap menahan proof bila PAD gagal.

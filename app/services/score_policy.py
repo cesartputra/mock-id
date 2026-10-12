@@ -34,7 +34,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v1"
+        self.version = "demo-routing-v2-pad-review"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -136,6 +136,19 @@ class ScorePolicy:
             or any(type(v) is not bool for v in mandatory.values())
         ):
             decision = "TECHNICAL_PENDING"
+            security = False
+        elif (
+            self.mode == "demo"
+            and not self.calibrator.calibrated
+            and state == "manual"
+            and result.get("pad_review_required") is True
+            and mandatory["session_nonce_proof"]
+            and mandatory["document_identity_complete"]
+        ):
+            # PAD uncertainty is not proof of fraud and must not become a
+            # score-only rejection. The failed mandatory PAD control remains
+            # false, so this path can never automatically approve/issue PDF.
+            decision = "MANUAL_PENDING"
             security = False
         elif score < 75:
             decision = "REJECTED"

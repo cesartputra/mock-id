@@ -506,13 +506,13 @@ def applicant_result(result, who):
 
 def capture_result(result, who):
     if who['role'] in ['admin','helpdesk']: return result
-    keys=['ready','complete','context','warnings','face_box','card_box','image_size','nik_readable','nik_matches','hand_detected','subject_key','mode']
+    keys=['ready','complete','context','warnings','face_box','card_box','image_size','nik_readable','nik_matches','hand_detected','subject_key','mode','pad_review_required']
     return {k:result[k] for k in keys if k in result}
 
 
 def live_result(result, who):
     if who['role'] in ['admin','helpdesk']: return result
-    keys=['passed','done','phase','challenge','turn_direction','neutral_samples','blink_closed','frames','selfie_seq','reason','proof_token','stream','mode','image_size']
+    keys=['passed','done','phase','challenge','turn_direction','neutral_samples','blink_closed','frames','selfie_seq','reason','proof_token','stream','mode','image_size','pad_passed','pad_review_required']
     value={k:result[k] for k in keys if k in result}
     value['completed']=[{k:item[k] for k in ['challenge','passed'] if k in item} for item in result.get('completed',[])]
     if 'feedback' in result:value['feedback']=capture_result(result['feedback'],who)

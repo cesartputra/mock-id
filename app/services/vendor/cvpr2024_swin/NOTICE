@@ -1,0 +1,10 @@
+Source: https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge
+Pinned revision: 2b7e9d2f6af93e33806c11ad48f735f1c1810dad
+File: nets/swin_transformer_v2.py
+MIT license, Copyright (c) 2024 Xianhua He.
+Architecture retains upstream Copyright (c) 2022 Microsoft header.
+Local changes: replace timm helpers with PyTorch inference-only helpers; replace
+CUDA-only log(100) constant with the equivalent scalar; use disabled CPU autocast
+for FP32 export. Network architecture, weights and outputs remain unchanged.
+Runtime uses exported ONNX, not this PyTorch module. This module is only for
+reproducible export and comparison against the source checkpoint.

@@ -152,9 +152,13 @@ def test_settings_persist_and_audit(client):
     assert ws['settings']==rules and ws['audit'][0]['type']=='Konfigurasi diperbarui'
 
 
-def test_capture_check_real_and_no_nonce_consumption(client,real_models):
+def test_capture_check_real_and_no_nonce_consumption(client,real_models,monkeypatch):
     import cv2
     from pathlib import Path
+    from types import SimpleNamespace
+    # Throttle correctness is independent of model initialization/inference
+    # duration, which can legitimately exceed its 500 ms interval.
+    monkeypatch.setattr('app.controller.verification.time', SimpleNamespace(monotonic=lambda: 100.0))
     verifier=client.app.state.verifier
     verifier.face,verifier.landmarks,verifier.visibility=real_models.face,real_models.landmarks,real_models.visibility
     s=client.post('/api/sessions').json()

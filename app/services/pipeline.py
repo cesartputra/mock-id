@@ -10,7 +10,7 @@ from app.model.repository import utcnow
 from app.services.imaging import CaptureError, card_region, quality
 from app.services.ocr import OCRService
 from app.services.face import FaceService
-from app.services.antispoof import AntiSpoofService
+from app.services.antispoof import AntiSpoofService, PAD_FILE, PAD_MODEL
 from app.services.deepfake import DeepfakeService
 from app.services.landmarks import LandmarkService
 from app.services.dukcapil import DukcapilService
@@ -25,7 +25,7 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-MODEL_FILES = ['yunet.onnx', 'sface.onnx', 'minifasnet.onnx', 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
+MODEL_FILES = ['yunet.onnx', 'sface.onnx', PAD_FILE, 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
 
 
 class VerificationService:
@@ -42,7 +42,7 @@ class VerificationService:
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
         return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
-                'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real'}
+                'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real', 'pad_model': PAD_MODEL}
 
     def load(self):
         missing = [name for name, exists in self.availability()['files'].items() if not exists]

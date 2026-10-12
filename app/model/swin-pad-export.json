@@ -1,0 +1,41 @@
+{
+  "model": "CVPR 2024 Swin V2-B (face)",
+  "source_revision": "2b7e9d2f6af93e33806c11ad48f735f1c1810dad",
+  "checkpoint_sha256": "8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc",
+  "onnx_sha256": "2dd90b431279fe331a6b145cb54bbab5e157108fc0cd1d05509f851e246ae583",
+  "onnx_bytes": 351472365,
+  "classes": {
+    "0": "live",
+    "1": "spoof"
+  },
+  "input": [
+    1,
+    3,
+    224,
+    224
+  ],
+  "export": {
+    "torch": "2.6.0",
+    "onnx": "1.17.0",
+    "opset": 17,
+    "precision": "fp32"
+  },
+  "parity": [
+    {
+      "fixture": "public_astronaut",
+      "max_logit_absolute_error": 2.86102294921875e-06,
+      "onnx_cpu_seconds": 0.2341
+    },
+    {
+      "fixture": "public_astronaut_blur",
+      "max_logit_absolute_error": 2.6226043701171875e-06,
+      "onnx_cpu_seconds": 0.2455
+    },
+    {
+      "fixture": "public_astronaut_mirror",
+      "max_logit_absolute_error": 1.430511474609375e-06,
+      "onnx_cpu_seconds": 0.2376
+    }
+  ],
+  "scope": "Numerical export parity on public fixtures; not a KYC accuracy benchmark."
+}

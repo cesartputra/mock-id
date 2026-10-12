@@ -15,7 +15,7 @@ npm run setup
 npm start
 ```
 
-Buka **http://127.0.0.1:4173**. Setup membuat `.venv`, memasang library Python, mengunduh sekitar **247 MiB bobot model**, memverifikasi SHA-256, dan menjalankan smoke test OCR. Dependensi Python memerlukan ruang tambahan. Setup bisa dijalankan ulang; bobot dengan checksum yang sama tidak diunduh lagi. Pemrosesan selanjutnya memakai bobot lokal, tanpa mengirim foto ke layanan model.
+Buka **http://127.0.0.1:4173**. Setup membuat `.venv`, memasang library Python, mengunduh sekitar **580 MiB bobot model**, memverifikasi SHA-256, dan menjalankan smoke test OCR. Dependensi Python memerlukan ruang tambahan. Setup bisa dijalankan ulang; bobot dengan checksum yang sama tidak diunduh lagi. Pemrosesan selanjutnya memakai bobot lokal, tanpa mengirim foto ke layanan model.
 
 Jika Python tidak terdeteksi otomatis:
 
@@ -43,7 +43,7 @@ npm run setup
 npm start
 ```
 
-SQLite lokal dan bobot model berada di `.gitignore`; pull tidak menimpa data tersebut. Jika Anda punya perubahan kode lokal, selesaikan commit/stash sebelum pull. Repo berisi kode, manifest download, dan fixture pengujian publik. Bobot besar, foto pemohon, `.venv`, serta database lokal tidak diunggah ke GitHub.
+SQLite lokal dan bobot model berada di `.gitignore`; pull tidak menimpa data tersebut. Jika Anda punya perubahan kode lokal, selesaikan commit/stash sebelum pull. Repo berisi kode, manifest download, dan fixture pengujian publik. Bobot tidak dimasukkan ke Git; model Swin V2 tersedia sebagai asset Release pada repo private ini. Foto pemohon, `.venv`, dan database lokal tidak diunggah ke GitHub.
 
 Jika pindah versi Python, buat ulang `.venv` dengan Python 3.11/3.12 sebelum setup. Versi 2 menggantikan frontend simulasi versi 1; data `localStorage` lama tidak diimpor.
 
@@ -111,7 +111,7 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Wajah | OpenCV YuNet dan SFace; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [SFace](https://huggingface.co/opencv/face_recognition_sface) |
 | Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
-| Anti-spoof | MiniFASNetV2 / ONNX Runtime CPU | [Face anti-spoofing](https://github.com/yakhyo/face-anti-spoofing), [Silent Face](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) |
+| Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
 | Diagnostik gambar (tidak menentukan kelulusan) | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
 | Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
 | Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
@@ -170,7 +170,7 @@ Kartu tidak harus membentuk empat tepi sempurna: pencarian memakai kandidat geom
 
 Resolusi foto kamera ditargetkan 1920×1080 (bergantung perangkat), JPEG kualitas 0.95, dan backend mempertahankan sisi panjang sampai 1920 px. Frame preview/liveness tetap 640 px untuk membatasi beban. Panduan kartu menggunakan rasio 1.586 agar kartu lebih besar dan proporsional.
 
-FaceAttribNet mendeteksi kacamata/masker/kacamata hitam secara spesifik. Deteksi wajah terpotong/hilang dan tangan pada wajah memberi peringatan tambahan. Tidak ada jaminan semua jenis benda, rambut, occluder, atau serangan terdeteksi. MiniFASNetV2 dan tantangan landmark merupakan pemeriksaan empiris yang perlu dikalibrasi; foto/video/virtual camera tidak dijamin tertolak 100%.
+FaceAttribNet mendeteksi kacamata/masker/kacamata hitam secara spesifik. Deteksi wajah terpotong/hilang dan tangan pada wajah memberi peringatan tambahan. Tidak ada jaminan semua jenis benda, rambut, occluder, atau serangan terdeteksi. Swin V2 PAD dan tantangan landmark merupakan pemeriksaan empiris yang perlu dikalibrasi; foto/video/virtual camera tidak dijamin tertolak 100%.
 
 Sesudah pull, hentikan server lama lalu jalankan `npm run setup` untuk mengunduh bobot FaceAttribNet tambahan sekitar 41 MiB. Jalankan `npm start` kembali dan reload halaman; server lama tidak otomatis memuat perubahan endpoint Python.
 
@@ -178,9 +178,9 @@ Sesudah pull, hentikan server lama lalu jalankan `npm run setup` untuk mengunduh
 
 Restart server setelah `git pull --ff-only`, kemudian `npm start` dan muat ulang halaman browser. Tidak ada bobot model atau dependensi baru pada pembaruan ini. Pengujian mencakup reset ketiga tahap setelah sesi dikonsumsi, OCR ulang nyata, race OCR/reset, token lama, selfie/proof tampering, urutan/replay frame, transisi kedipan/senyum/putaran, serta penolakan foto publik statis yang digerakkan memakai model ONNX sebenarnya. Uji transisi positif menggunakan metrik landmark sintetis untuk logika temporal; keberhasilan seluruh alur pada webcam fisik dan variasi kamera/pencahayaan masih perlu diuji pengguna.
 
-### Kandidat anti-spoof CVPR 2024
+### Anti-spoof CVPR 2024
 
-Repo [Xianhua-He/cvpr2024-face-anti-spoofing-challenge](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) menyediakan kode penelitian, checkpoint general-scenario, dan [ekspor MobileNet ke ONNX](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge/blob/main/export/export_mobilenet.sh). Model bisa ditambahkan sebagai backend PAD atau dibandingkan sebelum mengganti MiniFASNet. Input full-image/face-area dan indeks kelasnya berbeda; README menyatakan live=0, spoof=1. Skrip pengujian PyTorch aslinya menggunakan CUDA/distributed, sehingga bukan dependensi yang cukup dipasang langsung ke app CPU ini. Integrasi membutuhkan adapter preprocessing/output, checksum bobot, validasi hasil ekspor ONNX, pengukuran latency/RAM, dan kalibrasi threshold dengan data wajah asli/foto/layar yang representatif. Versi 2.3 tetap memakai MiniFASNet; model CVPR tersebut belum diintegrasikan atau diuji di aplikasi ini.
+Integrasi CPU Swin V2 kini tersedia sejak versi 2.5. Lihat bagian pembaruan 2.5 di bawah untuk checkpoint, kontrak input/output, setup bobot dan batas validasi.
 
 ## Pembaruan 2.3: UI pendaftaran iDebKu
 
@@ -227,3 +227,33 @@ Classifier ViT Real/Fake umum belum dikalibrasi untuk potongan wajah hasil kamer
 Keputusan tetap menahan PAD rendah, tantangan gerakan gagal, visibilitas buruk, kartu/tangan tidak terbaca, ketidaksesuaian NIK/wajah dan kontinuitas wajah. Pendaftaran perseorangan tetap memerlukan hasil server `status: pass`. Hasil baru mencatat `decision_policy: kyc-core-v1-ai-image-diagnostic`; Dukcapil tetap mock. Ini perubahan kebijakan penggunaan model, bukan fine-tuning atau bukti bahwa classifier sudah akurat untuk semua kamera.
 
 Tes regresi kebijakan memakai fixture terpisah: PAD 97,2%, cosine 0,620 dan skor classifier 99,7% tetap dapat lolos ketika kontrol utama terpenuhi; tiap kegagalan kontrol utama tetap menahan handoff. Tes model nyata tetap memakai fixture publik. Webcam/KTP pribadi pengguna tidak dimasukkan ke test fixture. Hasil lama tidak dihitung ulang atau diubah; lakukan pemeriksaan baru sesudah menghentikan server, `git pull --ff-only`, `npm start`, dan reload halaman. Tidak perlu unduhan model atau dependensi baru.
+
+## Pembaruan 2.5: CVPR 2024 Swin V2 sebagai anti-spoof utama
+
+MiniFASNet diganti dengan **Swin V2-B area wajah** dari repo resmi Xianhua-He, revision `2b7e9d2f6af93e33806c11ad48f735f1c1810dad`. Checkpoint `face_swin_v2_base.pth` (SHA-256 `8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc`) dikonversi menjadi ONNX FP32/opset 17, berukuran sekitar **335 MiB**. Bobot general-scenario area wajah dipakai; bukan checkpoint full-image atau model protokol kompetisi ResNet. Tidak ada fallback diam-diam ke MiniFASNet.
+
+Preprocessing memakai ROI wajah dengan margin 20 px yang dibatasi bingkai, resize linear 224×224, BGR→RGB dan normalisasi ImageNet mean `[.485,.456,.406]`/std `[.229,.224,.225]`. Tidak dilakukan SFace alignment untuk PAD. Model menghasilkan dua logits: **live=0, spoof=1**, berbeda dari indeks live MiniFASNet sebelumnya. Backend mengembalikan dua probabilitas, label kelas, nama checkpoint, revisi sumber dan runtime ONNX/CPU pada semua pemeriksaan PAD. Swin dipakai di preview, streaming gerakan dan final verify. SFace tetap untuk pencocokan wajah; ViT generic tetap diagnostik seperti versi 2.4.2.
+
+Ekspor dimuat dengan restricted unpickler (`weights_only=True`), state dictionary harus cocok penuh (`strict=True`). Arsitektur upstream disertakan hanya untuk reproduksi ekspor; perubahan terbatas pada helper inference dan konstanta CUDA agar berjalan di CPU. Laporan `app/model/swin-pad-export.json` mencatat parity logits maksimal sekitar **0,000003** pada tiga variasi fixture publik. Benchmark `app/model/swin-pad-benchmark.json` pada Mac arm64, dua thread CPU: median PAD **0,214 detik**, peak proses setelah seluruh model dimuat dan PAD dijalankan **994 MiB**. Angka tersebut bukan waktu total alur kamera atau jaminan penggunaan RAM; frame/capture dan browser menambah kebutuhan memori. Runtime tidak memerlukan PyTorch atau GPU.
+
+### Memperbarui dan mengunduh bobot
+
+Hentikan server dengan `Ctrl+C`, kemudian:
+
+```bash
+git pull --ff-only
+npm run setup
+npm start
+```
+
+Reload browser dan mulai sesi baru. Setup mengambil bobot ONNX, memverifikasi SHA-256, lalu warmup. Bobot lama yang sudah valid tidak diunduh ulang. Repo ini private: asset Swin diunduh melalui credential helper GitHub HTTPS yang dipakai untuk clone/pull. Token hanya dikirim ke API GitHub, tidak disimpan atau diteruskan ke CDN. Jika clone memakai SSH dan tidak ada credential HTTPS, unduh `cvpr2024_swin_v2_face.onnx` dari Releases saat login GitHub, taruh di `app/model/weights`, lalu jalankan setup lagi. Aplikasi tidak memakai credential tersebut saat memproses foto.
+
+### Reproduksi ekspor (maintainer)
+
+Runtime aplikasi tidak perlu langkah ini. Siapkan environment terpisah dan pasang `requirements-export-swin.txt`. Unduh checkpoint area wajah dari tautan repo resmi, kemudian:
+
+```bash
+python scripts/export_swin_pad.py --checkpoint face_swin_v2_base.pth --checkpoint-sha256 8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc --output app/model/weights/cvpr2024_swin_v2_face.onnx --report app/model/swin-pad-export.json
+```
+
+Tes memeriksa input RGB/normalisasi, indeks kelas, inference CPU nyata, penolakan foto statis/bergerak oleh rangkaian liveness, integritas model, distribusi credential/redirect dan kontrol KYC yang tetap wajib. Parity ekspor dan fixture publik tidak membuktikan akurasi pada semua webcam. Ambang PAD default 0,80 tetap eksperimen; kalibrasi dengan capture asli dan serangan foto/layar yang representatif masih diperlukan. Tidak ada klaim bahwa Swin pasti menolak semua spoof atau tidak pernah salah pada wajah asli.

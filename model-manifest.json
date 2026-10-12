@@ -18,10 +18,13 @@
     "sha256": "5ff8e82ac798012af4fbb9072a2ce5322d98b7b81dd3861c4b04ad8f8d88f79b"
   },
   {
-    "file": "minifasnet.onnx",
-    "url": "https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV2.onnx",
-    "bytes": 1743581,
-    "sha256": "b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907"
+    "file": "cvpr2024_swin_v2_face.onnx",
+    "url": "https://api.github.com/repos/cesartputra/mock-id/releases/assets/632868042",
+    "bytes": 351472365,
+    "sha256": "2dd90b431279fe331a6b145cb54bbab5e157108fc0cd1d05509f851e246ae583",
+    "github_asset": true,
+    "source_revision": "2b7e9d2f6af93e33806c11ad48f735f1c1810dad",
+    "source_checkpoint_sha256": "8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc"
   },
   {
     "file": "ocr/PP-OCRv6_det_small.onnx",

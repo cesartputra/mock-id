@@ -1,0 +1,12 @@
+{
+  "model": "CVPR 2024 Swin V2-B (face)",
+  "runtime": "ONNX / CPU",
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "intra_op_threads": 2,
+  "pad_seconds_median": 0.2141,
+  "pad_seconds_min": 0.2141,
+  "pad_seconds_max": 0.2225,
+  "full_model_process_peak_mib": 994.2,
+  "scope": "Public astronaut fixture, five warmed PAD calls; includes all model load for memory peak. Not end-to-end video latency or an accuracy assessment."
+}

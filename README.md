@@ -15,7 +15,7 @@ npm run setup
 npm start
 ```
 
-Buka **http://127.0.0.1:4173**. Setup membuat `.venv`, memasang library Python, mengunduh sekitar **206 MiB bobot model**, memverifikasi SHA-256, dan menjalankan smoke test OCR. Dependensi Python memerlukan ruang tambahan. Setup bisa dijalankan ulang; bobot dengan checksum yang sama tidak diunduh lagi. Pemrosesan selanjutnya memakai bobot lokal, tanpa mengirim foto ke layanan model.
+Buka **http://127.0.0.1:4173**. Setup membuat `.venv`, memasang library Python, mengunduh sekitar **247 MiB bobot model**, memverifikasi SHA-256, dan menjalankan smoke test OCR. Dependensi Python memerlukan ruang tambahan. Setup bisa dijalankan ulang; bobot dengan checksum yang sama tidak diunduh lagi. Pemrosesan selanjutnya memakai bobot lokal, tanpa mengirim foto ke layanan model.
 
 Jika Python tidak terdeteksi otomatis:
 
@@ -68,6 +68,8 @@ app/
     ├── landmarks.py           # PIPNet + MediaPipe Hand ONNX
     ├── antispoof.py           # MiniFASNetV2
     ├── deepfake.py             # ViT Real/Fake
+    ├── card.py                # Kartu: geometri, fitur referensi, susunan teks
+    ├── visibility.py          # FaceAttribNet dan umpan balik kamera
     ├── imaging.py             # Decode, kualitas, perspektif kartu
     ├── sessions.py            # TTL, nonce, retry
     ├── dukcapil.py            # Adapter mock, titik integrasi API resmi
@@ -85,8 +87,8 @@ View mengirim capture ke controller. Controller memvalidasi payload dan sesi, la
 ## Alur pemohon
 
 1. Unggah/ambil KTP, setujui pemrosesan lokal, dan jalankan OCR. NIK wajib terbaca sebagai 16 digit; data tidak diisi dengan contoh. Nama, tanggal lahir, dan alamat boleh dikoreksi. NIK tetap mengikuti OCR.
-2. Rekam kamera dengan tiga tantangan dalam urutan acak dari server: pejamkan/buka mata, putar kepala, tersenyum. Tiap tantangan mulai dengan empat frame ekspresi netral. Ikuti petunjuk selama sekitar lima detik per tantangan. Tidak ada pilihan mengunggah foto sebagai pengganti rekaman liveness di UI.
-3. Ambil/unggah foto wajah sambil memegang KTP. Kartu dan tangan perlu terlihat utuh, teks NIK terbaca, tanpa silau, dan wajah cukup besar.
+2. Rekam kamera dengan tiga tantangan dalam urutan acak dari server: pejamkan/buka mata, putar kepala, tersenyum. Tiap tantangan mulai dengan empat frame ekspresi netral. Ikuti petunjuk selama sekitar lima detik per tantangan. Tanda centang dan tombol lanjut hanya aktif setelah model memeriksa gerakan, kontinuitas wajah, serta PAD. Rekaman terikat token server dan hash frame/selfie. Tidak ada pilihan mengunggah foto sebagai pengganti rekaman liveness di UI.
+3. Pratinjau kamera memeriksa kacamata, masker, kacamata hitam, tangan di wajah, kualitas capture, serta risiko foto/layar sekitar sekali per detik. Tombol capture menunggu dua pemeriksaan bersih; rekaman dihentikan jika indikasi penutup wajah atau spoof berulang. Ambil/unggah foto wajah sambil memegang KTP. Kartu dan tangan perlu terlihat utuh, teks NIK terbaca, tanpa silau, dan wajah cukup besar.
 4. Backend mendeteksi bingkai kartu, melakukan OCR NIK kedua, mencari landmark tangan dekat kartu, mencocokkan wajah KTP↔selfie dan selfie↔KYC, memeriksa perubahan landmark, kontinuitas wajah, PAD, dan risiko manipulasi gambar.
 5. Hasil diarahkan ke kontrol lokal terpenuhi, perbaikan capture, gangguan teknis, pemeriksaan manual, atau tinjauan keamanan. Keputusan manual/jadwal dan audit benar-benar tersimpan di SQLite.
 
@@ -102,9 +104,10 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
 | Anti-spoof | MiniFASNetV2 / ONNX Runtime CPU | [Face anti-spoofing](https://github.com/yakhyo/face-anti-spoofing), [Silent Face](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) |
 | Manipulasi | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
+| Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
 | Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
 
-Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT) dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
+Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT), FaceAttribNet (BSD-3-Clause), dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
 
 SFace memakai ambang cosine awal 0.363. Ambang PAD, classifier deepfake, dan blur dapat diubah di UI; seluruh keputusan menggunakan konfigurasi backend. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
 
@@ -116,7 +119,7 @@ Foto KTP hanya berada dalam memori sesi. Selfie/KYC/frame hanya berada dalam mem
 
 Database `data/workspace.sqlite3` menyimpan nama, NIK tersamarkan, hasil/skor, audit, jadwal, dan konfigurasi. NIK lengkap maupun gambar tidak disimpan ke SQLite. Ekspor JSON/CSV merupakan unduhan yang dipilih operator. Lokasi database dapat diubah lewat `MOCK_ID_DATA_DIR`.
 
-Nonce server sekali pakai, maksimal tiga percobaan untuk hasil capture/teknis. Backend memeriksa urutan tantangan, minimal delapan frame per tantangan, timestamp, dan banyaknya frame identik. Pemeriksaan ini belum merupakan attestation kamera; klien yang dimodifikasi masih bisa menyusun payload sendiri.
+Nonce server sekali pakai, maksimal tiga percobaan untuk hasil capture/teknis. Rekaman liveness memiliki token sekali pakai dan maksimum tiga percobaan tersendiri. Server memeriksa waktu sesi, urutan tantangan, lalu mencatat hash selfie, frame, dan manifest yang benar-benar lolos; final verify menolak capture yang diganti. Backend memeriksa urutan tantangan, minimal delapan frame per tantangan, timestamp, dan banyaknya frame identik. Pemeriksaan ini belum merupakan attestation kamera; klien yang dimodifikasi masih bisa menyusun payload sendiri.
 
 Server launcher mengikat **127.0.0.1**. Host dan Origin dibatasi, dan mutasi API memerlukan `X-Local-Client: mock-id`. Header ini adalah penghalang request lintas situs, **bukan autentikasi operator**. Telemetry FastAPI dinonaktifkan. Untuk demo lokal satu operator; sebelum dipakai multiuser perlu autentikasi, otorisasi, enkripsi data, kebijakan retensi, dan evaluasi keamanan sesuai lingkungan sebenarnya.
 
@@ -125,6 +128,8 @@ Dokumentasi API: **http://127.0.0.1:4173/docs**. Untuk mencoba endpoint mutasi l
 ```bash
 curl -H 'X-Local-Client: mock-id' -X POST http://127.0.0.1:4173/api/sessions
 ```
+
+Endpoint kamera/liveness: `/api/sessions/{id}/capture-check`, `/api/sessions/{id}/liveness/start`, `/api/sessions/{id}/liveness/check`. Preview dibatasi dua request per detik dan tidak disimpan ke audit/disk.
 
 Endpoint utama: `/api/health`, `/api/workspace`, `/api/sessions`, `/api/sessions/{id}/document`, `/api/sessions/{id}/identity`, `/api/sessions/{id}/verify`, `/api/sessions/{id}/retry`, `/api/settings`, `/api/records/{id}/review`, `/api/records/{id}/schedule`.
 
@@ -143,3 +148,13 @@ Tes inference memakai model aktual: OCR NIK dari kartu sintetis, matching pada f
 Fixture publik hanya untuk pengujian; bukan data pemohon. Uji positif lengkap menggunakan orang di depan kamera dan KTP fisik masih perlu dilakukan di perangkat Anda. Implementasi ini menjalankan pemeriksaan nyata, tetapi belum dinyatakan sebagai sistem KYC produksi atau PAD tersertifikasi. Image classifier deepfake tidak mendeteksi semua video, virtual camera, atau injection.
 
 Aplikasi adalah proyek demo mandiri; bukan layanan resmi OJK/iDebKu/Dukcapil.
+
+## Pembaruan capture KYC dan liveness
+
+Kartu tidak harus membentuk empat tepi sempurna: pencarian memakai kandidat geometri/warna, homografi SIFT terhadap foto KTP awal, dan OCR seluruh foto untuk mencari blok NIK beserta label KTP di sekitarnya. Setiap kandidat tetap harus menghasilkan pembacaan NIK baru. NIK dari foto pertama tidak pernah dipakai untuk mengisi hasil OCR kedua. Spasi/hyphen dalam satu baris NIK dapat dinormalisasi; huruf tidak ditebak menjadi angka. Foto kecil/buram tetap bisa salah terbaca atau memerlukan capture ulang.
+
+Resolusi foto kamera ditargetkan 1920×1080 (bergantung perangkat), JPEG kualitas 0.95, dan backend mempertahankan sisi panjang sampai 1920 px. Frame preview/liveness tetap 640 px untuk membatasi beban. Panduan kartu menggunakan rasio 1.586 agar kartu lebih besar dan proporsional.
+
+FaceAttribNet mendeteksi kacamata/masker/kacamata hitam secara spesifik. Deteksi wajah terpotong/hilang dan tangan pada wajah memberi peringatan tambahan. Tidak ada jaminan semua jenis benda, rambut, occluder, atau serangan terdeteksi. MiniFASNetV2 dan tantangan landmark merupakan pemeriksaan empiris yang perlu dikalibrasi; foto/video/virtual camera tidak dijamin tertolak 100%.
+
+Sesudah pull, hentikan server lama lalu jalankan `npm run setup` untuk mengunduh bobot FaceAttribNet tambahan sekitar 41 MiB. Jalankan `npm start` kembali dan reload halaman; server lama tidak otomatis memuat perubahan endpoint Python.

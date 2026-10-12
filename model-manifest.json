@@ -58,5 +58,11 @@
     "url": "https://huggingface.co/opencv/palm_detection_mediapipe/resolve/233e619dcea1759bf6de707b9b904fe30881ea55/palm_detection_mediapipe_2023feb.onnx",
     "bytes": 3905734,
     "sha256": "78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c"
+  },
+  {
+    "file": "face_attrib.onnx",
+    "url": "https://github.com/yakhyo/face-attribute/releases/download/weights/face_attrib_net.onnx",
+    "bytes": 43296036,
+    "sha256": "1bf7c6453bec2fb28e0830f3a76dceb9ffd020124f87b28da5355940a7bc6e48"
   }
 ]

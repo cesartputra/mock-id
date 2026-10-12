@@ -59,20 +59,19 @@ class LandmarkService:
                 'model': 'PIPNet 68 / ONNX CPU', 'mode': 'real',
                 'scope': 'Gerakan landmark dengan baseline netral; ambang perlu kalibrasi kamera dan populasi.'}
 
-    def hand_near_card(self, image, box):
-        palms = self.palm.infer(image)
-        x, y, w, h = box
-        margin = max(w, h)*.16
-        close, detected = 0, 0
-        for palm in palms[:4]:
+    def hands(self, image):
+        found = []
+        for palm in self.palm.infer(image)[:4]:
             result = self.hand.infer(image, palm)
-            if result is None:
-                continue
-            detected += 1
-            points = result[4:67].reshape(21, 3)
-            contacts = sum(x-margin <= p[0] <= x+w+margin and y-margin <= p[1] <= y+h+margin for p in points)
-            if contacts >= 3:
-                close += 1
-        return {'passed': close > 0, 'hands_detected': detected, 'hands_near_card': close,
-                'model': 'OpenCV Zoo MediaPipe Palm + Hand ONNX CPU', 'mode': 'real',
-                'scope': 'Kedekatan landmark tangan dengan bingkai kartu; bukan bukti keaslian fisik dokumen.'}
+            if result is not None:
+                found.append(result[4:67].reshape(21,3))
+        return found
+
+    def hand_near_card(self, image, box):
+        hands = self.hands(image)
+        x, y, w, h = box
+        margin = max(w,h)*.16
+        close = sum(sum(x-margin <= p[0] <= x+w+margin and y-margin <= p[1] <= y+h+margin for p in points) >= 3 for points in hands)
+        return {'passed':close>0,'hands_detected':len(hands),'hands_near_card':int(close),
+                'model':'OpenCV Zoo MediaPipe Palm + Hand ONNX CPU','mode':'real',
+                'scope':'Kedekatan landmark tangan dengan bingkai kartu; bukan bukti keaslian fisik dokumen.'}

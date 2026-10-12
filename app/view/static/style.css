@@ -2217,3 +2217,39 @@ dialog::backdrop {
     font-size: 14px;
   }
 }
+.capture-feedback {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid #dde5d7;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.capture-feedback.warning {
+  background: #fff4e7;
+  color: #8d561b;
+  border-color: #edcfaa;
+}
+.capture-feedback.clear {
+  background: #edf5e8;
+  color: #286142;
+  border-color: #cedfc6;
+}
+.capture-feedback.checking {
+  background: #f3f5ee;
+  color: #65715c;
+}
+.camera-overlay.holding .camera-face-guide {
+  height: 35%;
+}
+.camera-overlay.holding .camera-card-guide {
+  width: 42%;
+  height: auto;
+  aspect-ratio: 1.586;
+}
+.camera-overlay.document .camera-card-guide {
+  width: 68%;
+  height: auto;
+  aspect-ratio: 1.586;
+}

@@ -79,3 +79,64 @@ def test_card_geometry(ktp_image):
     assert candidates[0][1].shape == (540,856,3)
     with pytest.raises(CaptureError):
         card_region(np.zeros_like(image))
+
+
+def test_nik_with_spaces_is_not_guessed():
+    assert parse_identity(['NIK: 1234 5678 9012 3456'])['nik']=='1234567890123456'
+    assert parse_identity(['NIK: 123456789012345O'])['nik']==''
+    assert parse_identity(['12345678','90123456'])['nik']==''
+
+
+@pytest.mark.parametrize('name,code',[('eyeglasses','eyeglasses'),('mask','mask'),('sunglasses','sunglasses')])
+def test_actual_visibility_attributes(real_models,name,code):
+    image=cv2.imread(str(Path(__file__).parent/'fixtures'/'face_attributes'/f'{name}.jpg'))
+    result=real_models.visibility.inspect(image)
+    assert not result['ready']
+    assert code in [w['code'] for w in result['warnings']]
+    assert result['attributes'][code]>.6
+
+
+def test_clear_face_visibility_and_preview_pad(real_models,face_image):
+    result=real_models.visibility.inspect(face_image)
+    assert result['ready']
+    blank=real_models.visibility.inspect(np.zeros_like(face_image))
+    assert not blank['ready'] and blank['warnings'][0]['code']=='face_missing'
+    checked=real_models.inspect_capture(face_image)
+    assert checked['pad']['mode']=='real'
+    assert 0<=checked['pad']['live_probability']<=1
+
+
+def test_small_rotated_partly_covered_card(real_models,ktp_image):
+    from app.services.card import HoldingCardService
+    image=np.full((1280,1920,3),120,np.uint8)
+    # 2.3% of the scene, below the old mandatory 2.5% threshold. Fingers
+    # break the rectangular border, but the actual text remains readable.
+    small=cv2.resize(ktp_image,(300,190))
+    image[510:700,710:1010]=small
+    cv2.rectangle(image,(707,580),(740,638),(100,130,175),-1)
+    transform=cv2.getRotationMatrix2D((860,605),-12,1)
+    image=cv2.warpAffine(image,transform,(1920,1280),borderValue=(120,120,120))
+    card=HoldingCardService(real_models.ocr).read(image,reference=ktp_image,expected_nik='1234567890123456')
+    assert card['reading']['fields']['nik']=='1234567890123456'
+    assert card['box'][2]<700
+
+
+def test_card_fallback_cannot_invent_nik(real_models,ktp_image):
+    from app.services.card import HoldingCardService
+    with pytest.raises(CaptureError):
+        HoldingCardService(real_models.ocr).read(np.full((500,800,3),120,np.uint8),reference=ktp_image,expected_nik='1234567890123456')
+
+
+def test_real_liveness_rejects_moving_photo(real_models,face_image):
+    from app.model.entities import CaptureSession
+    s=CaptureSession();s.challenges=['blink','turn','smile']
+    # Moving a flat photograph changes pixel hashes but not facial expression.
+    frames=[];manifest=[]
+    for group,c in enumerate(s.challenges):
+        for i in range(8):
+            affine=np.float32([[1,0,i%3],[0,1,i%2]])
+            frame=cv2.warpAffine(face_image,affine,(512,512),borderMode=cv2.BORDER_REFLECT)
+            frames.append(frame);manifest.append({'challenge':c,'t_ms':(group*8+i)*350})
+    result=real_models.evaluate_liveness(s,face_image,frames,manifest)
+    assert not result['passed']
+    assert not result['live']['passed']

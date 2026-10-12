@@ -15,6 +15,8 @@ from app.services.deepfake import DeepfakeService
 from app.services.landmarks import LandmarkService
 from app.services.dukcapil import DukcapilService
 from app.services.assets import verify_assets
+from app.services.card import HoldingCardService
+from app.services.visibility import FaceVisibilityService
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-MODEL_FILES = ['yunet.onnx', 'sface.onnx', 'minifasnet.onnx', 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx']
+MODEL_FILES = ['yunet.onnx', 'sface.onnx', 'minifasnet.onnx', 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
 
 
 class VerificationService:
@@ -31,7 +33,7 @@ class VerificationService:
         self.repository = repository
         self.lock = threading.RLock()
         self.ocr = OCRService()
-        self.face = self.pad = self.deepfake = self.landmarks = None
+        self.face = self.pad = self.deepfake = self.landmarks = self.visibility = None
         self.dukcapil = DukcapilService()
         self.last_error = None
         self.assets_verified = False
@@ -39,7 +41,7 @@ class VerificationService:
     def availability(self):
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
-        return {'ready': all(files.values()), 'files': files, 'loaded': self.face is not None,
+        return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
                 'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real'}
 
     def load(self):
@@ -51,13 +53,64 @@ class VerificationService:
             if invalid:
                 raise ModelUnavailable('Checksum model tidak cocok: '+', '.join(invalid))
             self.assets_verified = True
-        if self.face is None:
-            face = FaceService()
-            pad = AntiSpoofService()
+        if self.deepfake is None:
+            face = self.face or FaceService()
+            pad = self.pad or AntiSpoofService()
             deepfake = DeepfakeService()
-            landmarks = LandmarkService(face)
+            landmarks = self.landmarks or LandmarkService(face)
+            visibility = self.visibility or FaceVisibilityService(face, landmarks)
             self.ocr.load()
-            self.face, self.pad, self.deepfake, self.landmarks = face, pad, deepfake, landmarks
+            self.face, self.pad, self.deepfake, self.landmarks, self.visibility = face, pad, deepfake, landmarks, visibility
+
+    def inspect_capture(self, image, holding=False):
+        # Nonblocking lock: preview must not queue behind a full verification.
+        if not self.lock.acquire(blocking=False):
+            return {'ready':False,'warnings':[{'code':'inference_busy','message':'Model sedang memproses capture lain. Tunggu pemeriksaan kamera berikutnya.'}],'mode':'real'}
+        try:
+            if self.visibility is None:
+                invalid=verify_assets()
+                if invalid:
+                    raise ModelUnavailable('Model hilang/berubah: '+', '.join(invalid)+'. Jalankan npm run setup.')
+                face=self.face or FaceService()
+                landmarks=self.landmarks or LandmarkService(face)
+                visibility=FaceVisibilityService(face,landmarks)
+                self.face,self.landmarks,self.visibility=face,landmarks,visibility
+            result=self.visibility.inspect(image,holding)
+            if result.get('face_box') is not None:
+                self.pad=self.pad or AntiSpoofService()
+                face=self.face.faces(image)[0]
+                pad=self.pad.score(image,face)
+                result['pad']=pad
+                if pad['live_probability']<self.repository.settings()['pad_probability']:
+                    result['warnings'].append({'code':'spoof_risk','message':'Model mendeteksi risiko foto/layar. Gunakan wajah langsung di depan kamera, bukan foto atau video pada perangkat.'})
+                    result['ready']=False
+            return result
+        finally:
+            self.lock.release()
+
+    def evaluate_liveness(self, session, selfie, frames, manifest):
+        with self.lock:
+            self.load()
+            rules=self.repository.settings()
+            visible=self.visibility.inspect(selfie)
+            if not visible['ready']:
+                return {'passed':False,'reason':visible['warnings'][0]['message'],'visibility':visible,'mode':'real'}
+            self_face=self.face.one(selfie)
+            live=self.landmarks.challenges(frames,manifest,session.challenges)
+            continuity=[]
+            pad_samples=[self.pad.score(selfie,self_face)]
+            for challenge in session.challenges:
+                group=[f for f,m in zip(frames,manifest) if m['challenge']==challenge]
+                frame=group[min(2,len(group)-1)]
+                face=self.face.one(frame)
+                continuity.append(self.face.compare(selfie,self_face,frame,face))
+                pad_samples.append(self.pad.score(frame,face))
+            minimum=min(s['live_probability'] for s in pad_samples)
+            same_face=min(continuity)>=rules['face_cosine']
+            passed=live['passed'] and same_face and minimum>=rules['pad_probability']
+            reason='Gerakan dan anti-spoof terpenuhi.' if passed else ('Risiko foto/layar terdeteksi. Gunakan wajah langsung di kamera.' if minimum<rules['pad_probability'] else 'Gerakan wajah belum memenuhi tantangan. Foto statis atau gerakan kartu tidak menggantikan kedipan, senyum, dan putaran kepala.' if not live['passed'] else 'Wajah pada rekaman tidak konsisten. Rekam ulang dengan satu pemohon.')
+            return {'passed':bool(passed),'reason':reason,'live':live,'pad_samples':pad_samples,
+                    'pad_probability':minimum,'continuity':continuity,'rules':rules,'mode':'real'}
 
     def document(self, image):
         with self.lock:
@@ -91,6 +144,11 @@ class VerificationService:
         try:
             with self.lock:
                 self.load()
+                proof=session.liveness_result
+                if not proof or not proof.get('passed'):
+                    raise CaptureError('Rekam dan lolos pemeriksaan liveness sebelum foto KTP.')
+                add('Liveness saat rekaman',True,proof)
+                scores['liveness']=proof['pad_probability']
                 doc = session.document
                 ref_face = self.face.one(doc, allow_small_extra=True)
                 self_face = self.face.one(selfie)
@@ -100,18 +158,16 @@ class VerificationService:
                 q = quality(selfie)
                 if q['blur'] < rules['blur_min'] or not 35 < q['brightness'] < 235:
                     raise CaptureError('Selfie terlalu buram, gelap, atau silau.')
-                candidates = card_region(holding)
-                held_ocr = None
-                for _, crop, box in candidates[:4]:
-                    candidate = self.ocr.read(crop)
-                    if candidate['fields']['nik']:
-                        held_ocr, card_box = candidate, box
-                        break
-                if held_ocr is None:
-                    raise CaptureError('NIK pada KTP yang dipegang belum terbaca. Dekatkan KTP dan hindari menutup teks dengan jari.')
+                for label,image in [('Selfie',selfie),('Foto KYC',holding)]:
+                    visible=self.visibility.inspect(image,holding=label=='Foto KYC')
+                    add(label+' tanpa penutup wajah',visible['ready'],visible)
+                    if not visible['ready']:
+                        raise CaptureError(label+': '+visible['warnings'][0]['message'])
+                card=HoldingCardService(self.ocr).read(holding,reference=doc,expected_nik=identity['nik'])
+                held_ocr,card_box=card['reading'],card['box']
                 same_card = held_ocr['fields']['nik'] == identity['nik']
                 hand = self.landmarks.hand_near_card(holding, card_box)
-                add('KTP dalam foto KYC', True, {'box': card_box, 'ocr_confidence': held_ocr['confidence']})
+                add('KTP dalam foto KYC', True, {'box': card_box, 'ocr_confidence': held_ocr['confidence'], 'method': card['method']})
                 add('Kesesuaian NIK kedua foto KTP', same_card, {'same_nik': same_card})
                 add('Tangan dekat KTP', hand['passed'], hand)
                 if not hand['passed']:

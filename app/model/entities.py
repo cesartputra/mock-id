@@ -14,6 +14,15 @@ class CaptureSession:
     attempt: int = 1
     consumed: bool = False
     processing: bool = False
+    last_preview: float = 0.0
+    liveness_nonce: str | None = None
+    liveness_started: float = 0.0
+    liveness_attempts: int = 0
+    liveness_processing: bool = False
+    liveness_result: dict | None = None
+    liveness_hashes: list = field(default_factory=list)
+    liveness_manifest: str | None = None
+    liveness_selfie: str | None = None
     document: object | None = None
     document_result: dict | None = None
     last_result: dict | None = None

@@ -6,9 +6,16 @@ from rapidocr import RapidOCR
 from app.config import WEIGHTS
 
 
+def nik_match(line):
+    # Normalize separators inside one OCR line, never merge digits across lines
+    # or guess O/I as 0/1. Exact card equality is checked later.
+    compact = re.sub(r'(?<=\d)[ \t-]+(?=\d)', '', line)
+    return re.search(r'(?<!\d)\d{16}(?!\d)', compact)
+
+
 def parse_identity(lines):
     text = '\n'.join(lines).upper()
-    match = re.search(r'(?<!\d)\d{16}(?!\d)', text)
+    match = next((m for line in lines if (m := nik_match(line))), None)
     fields = {'nik': match.group() if match else '', 'name': '', 'birth': '', 'address': ''}
     for i, line in enumerate(lines):
         for label, key in [('NAMA', 'name'), ('ALAMAT', 'address')]:

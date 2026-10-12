@@ -10,9 +10,29 @@ class FaceService:
         self.recognizer = cv2.FaceRecognizerSF.create(str(WEIGHTS / 'sface.onnx'), '')
 
     def faces(self, image):
-        self.detector.setInputSize((image.shape[1], image.shape[0]))
-        _, faces = self.detector.detect(image)
-        return sorted(list(faces) if faces is not None else [], key=lambda f: float(f[2]*f[3]), reverse=True)
+        found=[]
+        used=set()
+        for target in [640,320,1280]:
+            scale=min(1.0,target/max(image.shape[:2]))
+            if scale in used:
+                continue
+            used.add(scale)
+            sample=cv2.resize(image,None,fx=scale,fy=scale) if scale<1 else image
+            self.detector.setInputSize((sample.shape[1],sample.shape[0]))
+            _,faces=self.detector.detect(sample)
+            for face in ([] if faces is None else faces):
+                face=face.copy();face[:14]/=scale
+                x,y,w,h=face[:4]
+                duplicate=False
+                for other in found:
+                    ox,oy,ow,oh=other[:4]
+                    overlap=max(0,min(x+w,ox+ow)-max(x,ox))*max(0,min(y+h,oy+oh)-max(y,oy))
+                    if overlap/max(w*h+ow*oh-overlap,1)>.4:
+                        duplicate=True
+                        break
+                if not duplicate:
+                    found.append(face)
+        return sorted(found,key=lambda f:float(f[2]*f[3]),reverse=True)
 
     def one(self, image, allow_small_extra=False):
         faces = self.faces(image)

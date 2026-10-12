@@ -35,7 +35,7 @@ async def lifespan(app):
 
 
 def create_app(data_directory=DATA):
-    app = FastAPI(title='mock-id local identity verification', version='2.0.0', lifespan=lifespan,
+    app = FastAPI(title='mock-id local identity verification', version='2.1.0', lifespan=lifespan,
                   telemetry={'tracing': False, 'metrics': False, 'logs': False, 'operation_spans': False, 'auto_configure': False})
     app.state.data_directory = data_directory
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])

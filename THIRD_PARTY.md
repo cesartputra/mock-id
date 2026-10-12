@@ -16,3 +16,9 @@ Preprocessing MiniFASNet mengacu pada [yakhyo/face-anti-spoofing](https://github
 - `tests/fixtures/astronaut.png`: NASA astronaut Eileen Collins, public domain, distribusi [scikit-image v0.25.2](https://github.com/scikit-image/scikit-image/blob/v0.25.2/skimage/data/astronaut.png). [Dokumentasi sumber](https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut). Dipakai hanya untuk memastikan model benar-benar menjalankan inference, bukan untuk mengevaluasi akurasi biometrik.
 - `tests/fixtures/hands.png`: frame ke-10 dari contoh `example_outputs/mphandpose_demo.webp`, distribusi OpenCV Zoo/Hand revision di atas, Apache-2.0. Digunakan untuk smoke test deteksi palm/landmark positif. Atribusi dan lisensi OpenCV sama seperti wrapper.
 - Kartu sintetis dibuat lewat OpenCV dalam test dan bertuliskan “KARTU UJI - BUKAN KTP”. Tidak berisi KTP atau data pribadi pemohon.
+
+## FaceAttribNet
+
+`app/services/vendor/face_attribute.py`: wrapper ONNX dari [yakhyo/face-attribute](https://github.com/yakhyo/face-attribute), revision `6b10bc87e4350572eb101f18b624987bc1fdc080`, BSD-3-Clause. Copyright 2025 Qualcomm Technologies, Inc. dan 2026 Yakhyokhuja Valikhujaev. Wrapper disalin tanpa perubahan; lisensi disertakan di `app/services/vendor/LICENSE-FaceAttribute`. Model berasal dari Qualcomm AI Hub. Input letterbox RGB 128×128, nilai 0–1; normalisasi ada di dalam graph, tidak diterapkan dua kali. Lima output adalah probabilitas biner independen, bukan softmax.
+
+`tests/fixtures/face_attributes/*.jpg`: foto uji eyeglasses_man/mask_man/sunglasses_man dari `assets/test_images` pada revision yang sama. Upstream menyatakan foto berasal dari Pexels dengan lisensi bebas. Fixture ini untuk smoke test peringatan model, bukan foto pengguna atau benchmark akurasi umum.

@@ -87,6 +87,22 @@ def test_actual_pipeline_does_not_fabricate_success(client,real_models,face_imag
     verifier=client.app.state.verifier
     verifier.face,verifier.pad,verifier.deepfake,verifier.landmarks,verifier.ocr=real_models.face,real_models.pad,real_models.deepfake,real_models.landmarks,real_models.ocr
     data,files=verify_payload(s,face_image,unique=True)
+    # Protocol fixture binds this exact payload; the pipeline still performs
+    # actual image inference and must reject the missing held card.
+    import hashlib
+    from app.controller.verification import manifest_digest
+    session.liveness_result={'passed':True,'pad_probability':.9,'mode':'test protocol fixture'}
+    session.liveness_hashes=[hashlib.sha256(part[1][1]).hexdigest() for part in files if part[0]=='frames']
+    session.liveness_selfie=hashlib.sha256(files[0][1][1]).hexdigest()
+    session.liveness_manifest=manifest_digest(json.loads(data['manifest']))
+    verifier.visibility=real_models.visibility
+    swapped=list(files)
+    swapped[0]=('selfie',('other.jpg',encoded(np.flip(face_image,axis=1)),'image/jpeg'))
+    changed=client.post(f'/api/sessions/{s["id"]}/verify',data=data,files=swapped)
+    assert changed.status_code==409 and not session.consumed
+    changed_data={**data,'manifest':json.dumps([{**m,'t_ms':m['t_ms']+1} for m in json.loads(data['manifest'])])}
+    changed=client.post(f'/api/sessions/{s["id"]}/verify',data=changed_data,files=files)
+    assert changed.status_code==409 and not session.consumed
     r=client.post(f'/api/sessions/{s["id"]}/verify',data=data,files=files)
     assert r.status_code==200,r.text
     result=r.json()
@@ -132,3 +148,50 @@ def test_settings_persist_and_audit(client):
     assert response.status_code==200 and response.json()==rules
     ws=client.get('/api/workspace').json()
     assert ws['settings']==rules and ws['audit'][0]['type']=='Konfigurasi diperbarui'
+
+
+def test_capture_check_real_and_no_nonce_consumption(client,real_models):
+    import cv2
+    from pathlib import Path
+    verifier=client.app.state.verifier
+    verifier.face,verifier.landmarks,verifier.visibility=real_models.face,real_models.landmarks,real_models.visibility
+    s=client.post('/api/sessions').json()
+    image=cv2.imread(str(Path(__file__).parent/'fixtures'/'face_attributes'/'eyeglasses.jpg'))
+    r=client.post(f'/api/sessions/{s["id"]}/capture-check',data={'context':'selfie'},files={'image':('frame.jpg',encoded(cv2.resize(image,(640,480))),'image/jpeg')})
+    assert r.status_code==200,r.text
+    assert not r.json()['ready']
+    assert 'eyeglasses' in [w['code'] for w in r.json()['warnings']]
+    session=client.app.state.sessions.get(s['id'])
+    assert not session.consumed and session.nonce==s['nonce']
+    r=client.post(f'/api/sessions/{s["id"]}/capture-check',files={'image':('frame.jpg',encoded(image),'image/jpeg')})
+    assert r.status_code==429
+
+
+def test_final_verify_requires_checked_liveness(client,face_image):
+    s=client.post('/api/sessions').json();data,files=verify_payload(s,face_image,unique=True)
+    r=client.post(f'/api/sessions/{s["id"]}/verify',data=data,files=files)
+    assert r.status_code==422 and 'Liveness belum' in r.json()['detail']
+
+
+def test_liveness_capture_tokens_and_real_static_rejection(client,real_models,face_image):
+    verifier=client.app.state.verifier
+    verifier.face,verifier.pad,verifier.deepfake,verifier.landmarks,verifier.ocr,verifier.visibility=real_models.face,real_models.pad,real_models.deepfake,real_models.landmarks,real_models.ocr,real_models.visibility
+    s=client.post('/api/sessions').json()
+    assert client.post(f'/api/sessions/{s["id"]}/liveness/start').status_code==422
+    session=client.app.state.sessions.get(s['id']);session.document=face_image
+    capture=client.post(f'/api/sessions/{s["id"]}/liveness/start').json()
+    data,parts=verify_payload(capture,face_image,unique=True)
+    data={'capture_nonce':capture['capture_nonce'],'manifest':data['manifest']}
+    parts=[p for p in parts if p[0]!='holding']
+    early=client.post(f'/api/sessions/{s["id"]}/liveness/check',data=data,files=parts)
+    assert early.status_code==422 and 'durasi' in early.json()['detail']
+    session.liveness_started-=10 # Simulate elapsed capture time, not model output.
+    result=client.post(f'/api/sessions/{s["id"]}/liveness/check',data=data,files=parts)
+    assert result.status_code==200,result.text
+    assert not result.json()['passed'] and not session.liveness_hashes
+    assert not session.consumed
+    assert client.post(f'/api/sessions/{s["id"]}/liveness/check',data=data,files=parts).status_code==409
+    second=client.post(f'/api/sessions/{s["id"]}/liveness/start').json()
+    assert second['capture_nonce']!=capture['capture_nonce']
+    client.post(f'/api/sessions/{s["id"]}/liveness/start')
+    assert client.post(f'/api/sessions/{s["id"]}/liveness/start').status_code==429

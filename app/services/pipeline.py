@@ -88,6 +88,38 @@ class VerificationService:
         finally:
             self.lock.release()
 
+    def inspect_liveness_frame(self, capture, image, digest, seq):
+        with self.lock:
+            feedback = self.inspect_capture(image)
+            capture.rules = self.repository.settings()
+            if not feedback['ready']:
+                capture.gestures.reset_action()
+                spoof = any(w['code'] == 'spoof_risk' for w in feedback['warnings'])
+                capture.spoof_strikes = capture.spoof_strikes+1 if spoof else 0
+                result = capture.result(feedback)
+                if capture.spoof_strikes >= 2:
+                    result.update(done=True, passed=False, reason='Risiko foto/layar terdeteksi. Rekam ulang dengan wajah langsung.')
+                return result
+            capture.spoof_strikes = 0
+            face = self.face.one(image)
+            metrics = self.landmarks.metrics(image)
+            if capture.reference_image is None:
+                if metrics['blink'] < .22 or abs(metrics['yaw']) >= .10:
+                    return capture.result(feedback, metrics)
+                capture.reference_image = image
+                capture.reference_face = face
+                capture.selfie_hash = digest
+                capture.selfie_seq = seq
+            cosine = self.face.compare(capture.reference_image, capture.reference_face, image, face)
+            if cosine < capture.rules['face_cosine']:
+                result = capture.result(feedback, metrics)
+                result.update(done=True, passed=False, reason='Wajah pada rekaman berubah atau tidak konsisten. Rekam ulang dengan satu pemohon.')
+                return result
+            capture.cosine_min = min(capture.cosine_min, cosine)
+            capture.pad_min = min(capture.pad_min, feedback['pad']['live_probability'])
+            capture.gestures.update(metrics)
+            return capture.result(feedback, metrics)
+
     def evaluate_liveness(self, session, selfie, frames, manifest):
         with self.lock:
             self.load()
@@ -177,18 +209,24 @@ class VerificationService:
                 scores['face_cosine'], scores['kyc_face_cosine'] = face_score, kyc_face_score
                 add('Wajah KTP ↔ selfie', face_score >= rules['face_cosine'], {'cosine': face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
                 add('Wajah selfie ↔ foto KYC', kyc_face_score >= rules['face_cosine'], {'cosine': kyc_face_score, 'threshold': rules['face_cosine'], 'model': 'SFace'})
-                live = self.landmarks.challenges(frames, manifest, session.challenges)
+                if proof.get('stream'):
+                    live = proof['live']
+                    continuity = proof['continuity']
+                    pad_scores = [self.pad.score(selfie, self_face)]
+                    pad_score = min(proof['pad_probability'], pad_scores[0]['live_probability'])
+                else:
+                    live = self.landmarks.challenges(frames, manifest, session.challenges)
+                    continuity = []
+                    pad_scores = [self.pad.score(selfie, self_face)]
+                    for challenge in session.challenges:
+                        frame = next(f for f, m in zip(frames, manifest) if m['challenge'] == challenge)
+                        frame_face = self.face.one(frame)
+                        continuity.append(self.face.compare(selfie, self_face, frame, frame_face))
+                        pad_scores.append(self.pad.score(frame, frame_face))
+                    pad_score = min(s['live_probability'] for s in pad_scores)
                 add('Tantangan liveness', live['passed'], live)
-                continuity = []
-                pad_scores = [self.pad.score(selfie, self_face)]
-                for challenge in session.challenges:
-                    frame = next(f for f, m in zip(frames, manifest) if m['challenge'] == challenge)
-                    frame_face = self.face.one(frame)
-                    continuity.append(self.face.compare(selfie, self_face, frame, frame_face))
-                    pad_scores.append(self.pad.score(frame, frame_face))
                 same_face = min(continuity) >= rules['face_cosine']
                 add('Kontinuitas wajah capture', same_face, {'cosines': continuity, 'threshold': rules['face_cosine'], 'scope': 'Pencocokan frame; bukan attestation kamera atau deteksi seluruh injection.'})
-                pad_score = min(s['live_probability'] for s in pad_scores)
                 scores['liveness'] = pad_score
                 add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], {'samples': pad_scores, 'minimum_live_probability': pad_score, 'threshold': rules['pad_probability']})
                 _, aligned = self.face.feature(selfie, self_face)

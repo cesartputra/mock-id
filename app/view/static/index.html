@@ -7,12 +7,31 @@
       name="description"
       content="Verifikasi lokal dengan OCR dan model biometrik open source. Dukcapil mock."
     />
-    <title>iDeb Verify — Local Inference</title>
+    <title>iDebKu — Demo Pendaftaran & KYC Lokal</title>
     <link rel="stylesheet" href="/static/style.css" />
     <script src="/static/capture-feedback.js" defer></script>
+    <script src="/static/registration.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body>
+    <header class="public-header">
+      <a class="public-brand" href="#home" aria-label="iDebKu demo beranda"
+        ><span class="public-wordmark"
+          ><span class="wordmark-symbol">i</span><span><b>deb</b>ku</span></span
+        ><span class="public-brand-divider"></span
+        ><span class="public-brand-label"
+          >INFORMASI DEBITUR<small>DEMO INTEGRASI LOKAL</small></span
+        ></a
+      >
+      <nav aria-label="Menu layanan">
+        <button data-page="home">Beranda</button
+        ><button data-public-info>Informasi</button
+        ><button data-page="status">Status layanan</button
+        ><button data-page="dashboard" class="operator-link">
+          Workspace operator ↗
+        </button>
+      </nav>
+    </header>
     <aside class="sidebar">
       <a class="brand" href="#dashboard" aria-label="iDeb Verify beranda"
         ><span class="brand-icon">iD<span>✓</span></span
@@ -53,6 +72,9 @@
           Workspace <span>/</span> <strong id="crumb">Ringkasan</strong>
         </div>
         <div class="top-actions">
+          <button class="button link" data-page="home">
+            Halaman pemohon ↗
+          </button>
           <span class="local-status"
             ><span class="green-dot"></span> Local inference</span
           ><button class="icon-button" id="help" aria-label="Tentang demo">
@@ -61,7 +83,21 @@
         </div>
       </header>
       <main id="app"></main>
-      <footer>
+      <footer class="public-footer">
+        <div>
+          <strong>Demo pendaftaran iDebKu</strong>
+          <p>Mock UI untuk integrasi KYC dan liveness perseorangan.</p>
+        </div>
+        <div>
+          <strong>Berjalan di server lokal</strong>
+          <p>Tidak terhubung ke OJK. Dukcapil belum diverifikasi.</p>
+        </div>
+        <small
+          >Referensi visual iDebKu • Prototipe integrasi, bukan layanan resmi
+          OJK.</small
+        >
+      </footer>
+      <footer class="operator-footer">
         iDeb Verify <span>•</span> Demo model open source
         <span class="footer-right">Tidak terhubung ke OJK atau Dukcapil</span>
       </footer>

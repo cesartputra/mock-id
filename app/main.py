@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.controller.verification import router
+from app.controller.registration import router as registration_router
 from app.config import DATA
 from app.model.repository import Repository
 from app.services.sessions import SessionService
@@ -35,7 +36,7 @@ async def lifespan(app):
 
 
 def create_app(data_directory=DATA):
-    app = FastAPI(title='mock-id local identity verification', version='2.1.0', lifespan=lifespan,
+    app = FastAPI(title='mock-id local identity verification', version='2.3.0', lifespan=lifespan,
                   telemetry={'tracing': False, 'metrics': False, 'logs': False, 'operation_spans': False, 'auto_configure': False})
     app.state.data_directory = data_directory
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
@@ -61,6 +62,7 @@ def create_app(data_directory=DATA):
         return response
 
     app.include_router(router)
+    app.include_router(registration_router)
     static = Path(__file__).parent / 'view' / 'static'
     app.mount('/static', StaticFiles(directory=static), name='static')
 

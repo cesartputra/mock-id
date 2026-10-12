@@ -2253,3 +2253,666 @@ dialog::backdrop {
   height: auto;
   aspect-ratio: 1.586;
 }
+
+#camera-detection {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.live-challenge-progress,
+.retake-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+  align-items: center;
+}
+.live-challenge-progress span {
+  flex: 1;
+  border: 1px solid var(--line, #dce3d8);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+}
+.live-challenge-progress .active {
+  background: #fcf3e4;
+  border-color: #c59550;
+}
+.live-challenge-progress .complete {
+  background: #edf5e6;
+  color: #416c32;
+}
+
+/* Public applicant shell, inspired by the iDebKu service pages. */
+.public-header,
+.public-footer {
+  display: none;
+}
+.public-mode {
+  --green: #b72c32;
+  --green-dark: #8e2329;
+  --mint: #fbefef;
+  --ink: #343434;
+  --muted: #737373;
+  --line: #e4e4e4;
+  --bg: #ffffff;
+  background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.public-mode .sidebar,
+.public-mode .topbar,
+.public-mode .operator-footer {
+  display: none;
+}
+.public-mode .main-shell {
+  margin-left: 0;
+  min-height: calc(100dvh - 84px);
+  display: flex;
+  flex-direction: column;
+}
+.public-mode #app {
+  flex: 1;
+  padding: 54px 30px 70px;
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+}
+.public-mode .public-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: #f5f5f5;
+  min-height: 84px;
+  padding: 18px max(30px, calc((100vw - 1280px) / 2));
+}
+.public-brand,
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: #4b4b4b;
+}
+.public-wordmark {
+  display: inline-flex;
+  align-items: center;
+  color: #3378a0;
+  font-size: 38px;
+  font-weight: 750;
+  letter-spacing: -2px;
+}
+.public-wordmark b {
+  color: #b72c32;
+}
+.wordmark-symbol {
+  display: inline-flex;
+  height: 40px;
+  width: 40px;
+  border-radius: 50%;
+  color: #fff;
+  background: #3378a0;
+  align-items: center;
+  justify-content: center;
+  font-size: 33px;
+  margin-right: -3px;
+  padding-right: 4px;
+}
+.public-brand-divider {
+  display: block;
+  width: 1px;
+  height: 36px;
+  background: #ccc;
+}
+.public-brand-label {
+  font-size: 10px;
+  line-height: 1.6;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.public-brand-label small {
+  display: block;
+  font-weight: 400;
+  font-size: 9px;
+  letter-spacing: 0.7px;
+}
+.public-header nav {
+  display: flex;
+  gap: 26px;
+  align-items: center;
+}
+.public-header nav button {
+  background: none;
+  border: none;
+  color: #555;
+  padding: 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.public-header nav .operator-link {
+  text-transform: none;
+  color: #a0292c;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.public-mode .public-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin: 0;
+  padding: 35px max(30px, calc((100vw - 1040px) / 2));
+  color: #fff;
+  background: #922c2a;
+  border-top: 4px solid #ba3d39;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.public-footer p {
+  opacity: 0.84;
+}
+.public-footer small {
+  grid-column: 1 / -1;
+  border-top: 1px solid #ffffff24;
+  padding-top: 18px;
+  color: #efcfcf;
+}
+.public-home {
+  text-align: center;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 0 10px;
+}
+.home-brand {
+  justify-content: center;
+  margin-bottom: 54px;
+}
+.home-brand .public-wordmark {
+  font-size: 64px;
+}
+.home-brand .wordmark-symbol {
+  width: 61px;
+  height: 61px;
+  font-size: 51px;
+}
+.home-brand .public-brand-divider {
+  height: 54px;
+}
+.home-brand .public-brand-label {
+  font-size: 12px;
+  text-align: left;
+}
+.home-kicker {
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  color: #a72930;
+  font-weight: 700;
+}
+.public-home h1 {
+  text-transform: uppercase;
+  font-size: 27px;
+  letter-spacing: 0.6px;
+  line-height: 1.55;
+  font-weight: 750;
+  margin: 14px 0;
+}
+.home-intro {
+  line-height: 1.8;
+  font-size: 15px;
+  color: #747474;
+}
+.home-services {
+  margin: 38px auto 30px;
+  display: flex;
+  justify-content: center;
+  gap: 54px;
+}
+.home-services .button {
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 17px 27px;
+  font-size: 16px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 1.7px;
+  box-shadow: 0 3px 8px #00000012;
+  min-width: 256px;
+}
+.public-register {
+  background: #bb2e34;
+}
+.public-register:hover {
+  background: #a22329;
+}
+.public-status {
+  background: #5c797e;
+}
+.public-status:hover {
+  background: #4c686d;
+}
+.home-services p {
+  line-height: 1.65;
+  font-size: 14px;
+  margin-top: 14px;
+  color: #606060;
+}
+.home-demo-note {
+  font-size: 12px;
+  color: #858585;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin: 28px 0 8px;
+}
+.home-demo-note .icon {
+  width: 16px;
+  height: 16px;
+}
+.public-form-panel {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.public-form-panel.wide {
+  max-width: 880px;
+}
+.registration-heading {
+  display: flex;
+  gap: 17px;
+  align-items: center;
+  border-bottom: 3px solid #a93033;
+  padding: 0 0 21px;
+  margin: 0 0 32px;
+}
+.registration-heading > span {
+  border: 1px solid #686868;
+  border-radius: 50%;
+  height: 51px;
+  width: 51px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.registration-heading h1 {
+  text-transform: uppercase;
+  font-size: 16px;
+  letter-spacing: 0.7px;
+  font-weight: 750;
+}
+.registration-heading p {
+  margin-top: 7px;
+  color: #808080;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.public-mode .field {
+  margin-bottom: 24px;
+}
+.public-mode .field label {
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  color: #525252;
+  margin-bottom: 11px;
+}
+.public-mode .field label em {
+  font-style: normal;
+  color: #b72c32;
+}
+.public-mode .field input,
+.public-mode .field select {
+  border-radius: 3px;
+  min-height: 44px;
+  background: #fff;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  padding: 11px 12px;
+  color: #4b4b4b;
+}
+.public-mode .field input[readonly] {
+  background: #f7f7f7;
+  color: #777;
+}
+.public-mode .button {
+  border-radius: 4px;
+}
+.public-mode .button.primary {
+  background: #b72c32;
+  border-color: #b72c32;
+}
+.public-mode .button.primary:hover {
+  background: #97282e;
+}
+.registration-notice {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 19px;
+  border: 1px solid #e9d2d2;
+  background: #fff8f8;
+  border-radius: 4px;
+  line-height: 1.65;
+  margin: 26px 0;
+}
+.registration-notice .icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: #ae2d32;
+  margin-top: 2px;
+}
+.registration-notice strong {
+  display: block;
+  font-size: 14px;
+}
+.registration-notice p {
+  font-size: 13px;
+  color: #747474;
+  margin-top: 3px;
+}
+.registration-notice.neutral {
+  background: #f8f9fa;
+  border-color: #e1e5e7;
+}
+.registration-notice.neutral .icon {
+  color: #5c797e;
+}
+.registration-notice.success {
+  border-color: #d1e4d7;
+  background: #f3f9f4;
+}
+.registration-notice.success .icon,
+.registration-notice.success strong {
+  color: #477553;
+}
+.registration-notice .button {
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
+}
+.registration-route {
+  font-size: 12px;
+  color: #929292;
+  line-height: 1.8;
+  margin-bottom: 30px;
+}
+.public-form-footnote {
+  border-top: 1px solid #eee;
+  margin-top: 32px;
+  padding-top: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #8a8a8a;
+}
+.registration-steps {
+  display: flex;
+  gap: 16px;
+  margin: 10px 0 26px;
+  flex-wrap: wrap;
+  color: #999;
+  font-size: 12px;
+}
+.registration-steps .done {
+  color: #567259;
+}
+.registration-steps .current {
+  color: #a22e32;
+  font-weight: 700;
+}
+.registration-steps .preview {
+  color: #b27f36;
+}
+.registration-summary {
+  margin: 28px 0;
+}
+.registration-summary > div {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 18px;
+  padding: 17px 0;
+  border-bottom: 1px solid #eee;
+  line-height: 1.6;
+  font-size: 14px;
+}
+.registration-summary dt {
+  color: #777;
+}
+.registration-summary dd {
+  margin: 0;
+  color: #414141;
+  overflow-wrap: anywhere;
+}
+.registration-agreement {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 26px 0;
+}
+.registration-agreement input {
+  margin-top: 5px;
+  accent-color: #b72c32;
+}
+.document-checklist {
+  background: #f7f8f9;
+  padding: 20px;
+  margin-bottom: 26px;
+  line-height: 1.7;
+}
+.document-checklist p {
+  margin: 8px 0 15px;
+  color: #777;
+  font-size: 13px;
+}
+.document-checklist label {
+  font-size: 12px;
+}
+.receipt-panel {
+  text-align: center;
+}
+.receipt-symbol {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #edf5ee;
+  color: #567b57;
+  margin: 5px auto 23px;
+}
+.receipt-symbol .icon {
+  width: 32px;
+  height: 32px;
+}
+.receipt-panel h1 {
+  font-size: 28px;
+  letter-spacing: -0.3px;
+  margin: 15px 0;
+}
+.receipt-panel > p {
+  color: #777;
+  line-height: 1.8;
+}
+.receipt-number {
+  background: #f9f5f5;
+  border: 1px dashed #d3b0b0;
+  padding: 23px;
+  border-radius: 4px;
+  margin: 30px auto;
+}
+.receipt-number small {
+  display: block;
+  color: #997575;
+  font-size: 10px;
+  letter-spacing: 1.3px;
+  margin-bottom: 10px;
+}
+.receipt-number strong {
+  font-size: 28px;
+  letter-spacing: 2px;
+  color: #9c2d33;
+}
+.receipt-panel .registration-summary,
+.receipt-panel .registration-notice {
+  text-align: left;
+}
+.receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 30px;
+}
+.public-mode .verification-panel {
+  border-radius: 4px;
+  border-top: 3px solid #a93033;
+}
+.public-mode .verification-aside .panel {
+  border-radius: 4px;
+}
+.public-mode .step.current b {
+  background: #ad2d33;
+}
+.public-mode .step.current {
+  color: #ad2d33;
+}
+.public-mode .page-head h1 {
+  font-size: 28px;
+  letter-spacing: -0.5px;
+}
+@media (max-width: 920px) {
+  .public-mode .public-header {
+    padding: 17px 24px;
+  }
+  .public-header nav {
+    gap: 14px;
+  }
+  .public-header .public-brand-label,
+  .public-header .public-brand-divider {
+    display: none;
+  }
+  .home-services {
+    gap: 26px;
+  }
+  .home-services .button {
+    min-width: 230px;
+    font-size: 14px;
+  }
+}
+@media (max-width: 600px) {
+  .public-mode .public-header {
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 18px;
+  }
+  .public-header nav {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .public-header nav button {
+    font-size: 9px;
+  }
+  .public-mode #app {
+    padding: 30px 20px 45px;
+  }
+  .home-brand {
+    margin-bottom: 30px;
+    gap: 13px;
+  }
+  .home-brand .public-wordmark {
+    font-size: 45px;
+  }
+  .home-brand .wordmark-symbol {
+    width: 45px;
+    height: 45px;
+    font-size: 36px;
+  }
+  .home-brand .public-brand-label {
+    font-size: 9px;
+  }
+  .home-brand .public-brand-label small {
+    font-size: 7px;
+  }
+  .public-home {
+    padding-top: 10px;
+  }
+  .public-home h1 {
+    font-size: 20px;
+    line-height: 1.55;
+  }
+  .home-intro {
+    font-size: 13px;
+  }
+  .desktop-break {
+    display: none;
+  }
+  .home-services {
+    flex-direction: column;
+    gap: 26px;
+    margin-top: 28px;
+  }
+  .home-services .button {
+    width: 100%;
+    max-width: 330px;
+  }
+  .public-mode .public-footer {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 28px 24px;
+    font-size: 12px;
+  }
+  .registration-heading {
+    gap: 12px;
+  }
+  .registration-heading h1 {
+    font-size: 13px;
+  }
+  .registration-heading p {
+    font-size: 11px;
+  }
+  .registration-summary > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .registration-notice {
+    padding: 15px;
+    flex-wrap: wrap;
+  }
+  .registration-notice > div {
+    flex: 1;
+  }
+  .registration-notice .button {
+    width: 100%;
+  }
+  .public-mode .form-actions {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .public-mode .form-actions .button {
+    flex: 1;
+  }
+  .receipt-number strong {
+    font-size: 22px;
+    letter-spacing: 1px;
+  }
+  .registration-steps {
+    gap: 10px;
+  }
+}
+.public-header nav {
+  flex-direction: row;
+}
+.public-mode .screen-enter {
+  animation: none;
+}
+
+.public-mode .verification-aside .scenario-card {
+  display: none;
+}

@@ -19,6 +19,7 @@ class Repository:
         with self.connect() as con:
             con.executescript('''CREATE TABLE IF NOT EXISTS results (id TEXT PRIMARY KEY, created TEXT, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, type TEXT, ref TEXT, detail TEXT);
+            CREATE TABLE IF NOT EXISTS registrations (id TEXT PRIMARY KEY, created TEXT, verification_id TEXT UNIQUE, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);''')
             con.execute('INSERT OR IGNORE INTO settings VALUES (1, ?)', (json.dumps(DEFAULT_SETTINGS),))
 
@@ -72,3 +73,17 @@ class Repository:
         with self.lock, self.connect() as con:
             con.execute('UPDATE settings SET payload=? WHERE id=1', (json.dumps(settings),))
         self.audit('Konfigurasi diperbarui', json.dumps(settings))
+
+    def save_registration(self, record):
+        with self.lock, self.connect() as con:
+            con.execute('INSERT INTO registrations VALUES (?,?,?,?)', (record['id'], record['created'], record['verification_id'], json.dumps(record, ensure_ascii=False)))
+
+    def registration(self, registration_id):
+        with self.connect() as con:
+            row = con.execute('SELECT payload FROM registrations WHERE id=?', (registration_id,)).fetchone()
+            return json.loads(row['payload']) if row else None
+
+    def registration_for_verification(self, verification_id):
+        with self.connect() as con:
+            row = con.execute('SELECT payload FROM registrations WHERE verification_id=?', (verification_id,)).fetchone()
+            return json.loads(row['payload']) if row else None

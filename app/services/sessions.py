@@ -53,12 +53,48 @@ class SessionService:
                 raise HTTPException(409, 'Sesi ini belum dapat dicoba ulang.')
             if s.attempt >= MAX_ATTEMPTS:
                 raise HTTPException(429, 'Batas percobaan tercapai. Buat sesi baru.')
-            s.attempt += 1
+            return self.reset(session_id, 'liveness', s.nonce)
+
+    def clear_liveness(self, s):
+        s.liveness_result = None
+        s.liveness_hashes = []
+        s.liveness_nonce = None
+        s.liveness_manifest = None
+        s.liveness_selfie = None
+        s.liveness_proof = None
+        s.stream_state = None
+        s.liveness_started = 0.0
+        s.challenges = secrets.SystemRandom().sample(['blink', 'turn', 'smile'], 3)
+
+    def check_revision(self, s, request):
+        revision = request.headers.get('X-Capture-Revision')
+        # Legacy batch clients without this header remain supported. Updated
+        # clients bind every asynchronous request to a capture generation.
+        if revision is not None and revision != str(s.revision):
+            raise HTTPException(409, 'Capture lama sudah dibersihkan. Gunakan pengambilan terbaru.')
+
+    def reset(self, session_id, stage, nonce):
+        with self.lock:
+            s = self.get(session_id)
+            if stage not in ['document', 'liveness', 'holding']:
+                raise HTTPException(422, 'Tahap capture tidak valid.')
+            if not secrets.compare_digest(s.nonce, nonce):
+                raise HTTPException(409, 'Token reset sudah berubah. Gunakan sesi terbaru.')
+            if s.processing or s.liveness_processing:
+                raise HTTPException(409, 'Pemeriksaan masih berjalan. Tunggu sebelum mengambil ulang.')
+            if s.consumed:
+                if s.attempt >= MAX_ATTEMPTS:
+                    raise HTTPException(429, 'Batas percobaan tercapai. Buat sesi baru.')
+                s.attempt += 1
+                s.liveness_attempts = 0
+            s.revision += 1
             s.consumed = False
             s.nonce = secrets.token_urlsafe(32)
-            s.liveness_result = None
-            s.liveness_hashes = []
-            s.liveness_nonce = None
-            s.liveness_attempts = 0
-            s.challenges = secrets.SystemRandom().sample(['blink', 'turn', 'smile'], 3)
+            s.last_preview = 0.0
+            s.last_result = None
+            if stage != 'holding' or not (s.liveness_result and s.liveness_result.get('passed')):
+                self.clear_liveness(s)
+            if stage == 'document':
+                s.document = None
+                s.document_result = None
             return s

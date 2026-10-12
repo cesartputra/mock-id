@@ -14,6 +14,7 @@ from app.config import MAX_IMAGE_BYTES, MAX_FRAME_BYTES, MAX_FRAMES, MAX_ATTEMPT
 from app.model.repository import utcnow
 from app.services.imaging import CaptureError, decode_image
 from app.services.pipeline import ModelUnavailable
+from app.services.liveness import LiveCapture
 
 router = APIRouter(prefix='/api', dependencies=[Security(APIKeyHeader(name='X-Local-Client', auto_error=False))])
 
@@ -73,6 +74,7 @@ def start_liveness(session_id: str, request: Request):
     sessions,_,repository=services(request)
     with sessions.lock:
         session=sessions.get(session_id)
+        sessions.check_revision(session, request)
         if session.consumed or session.processing or session.liveness_processing:
             raise HTTPException(409,'Sesi sedang atau sudah diproses.')
         if session.document is None:
@@ -82,12 +84,60 @@ def start_liveness(session_id: str, request: Request):
         session.liveness_attempts+=1
         session.liveness_nonce=secrets.token_urlsafe(32)
         session.liveness_started=time.monotonic()
-        session.liveness_result=None
-        session.liveness_hashes=[]
-        session.challenges=secrets.SystemRandom().sample(['blink','turn','smile'],3)
-        result={**session.public(),'capture_nonce':session.liveness_nonce,'liveness_attempts':session.liveness_attempts}
+        token = session.liveness_nonce
+        started = session.liveness_started
+        sessions.clear_liveness(session)
+        session.liveness_nonce = token
+        session.liveness_started = started
+        session.stream_state = LiveCapture(session.challenges)
+        result={**session.public(),'capture_nonce':session.liveness_nonce,'liveness_attempts':session.liveness_attempts, 'turn_direction': session.stream_state.gestures.turn_direction}
     repository.audit('Rekaman liveness dimulai',f'Percobaan rekaman {session.liveness_attempts}; tantangan server.',session.id)
     return result
+
+
+@router.post('/sessions/{session_id}/liveness/frame')
+async def live_frame(session_id: str, request: Request, capture_nonce: str = Form(...),
+                     seq: int = Form(ge=0), image: UploadFile = File(...)):
+    sessions, verifier, repository = services(request)
+    with sessions.lock:
+        session = sessions.get(session_id)
+        sessions.check_revision(session, request)
+        if (not session.liveness_nonce or not secrets.compare_digest(session.liveness_nonce, capture_nonce)
+                or session.consumed or session.processing or session.liveness_processing):
+            raise HTTPException(409, 'Token rekaman tidak valid atau pemeriksaan frame masih berjalan.')
+        capture = session.stream_state
+        revision = session.revision
+        session.liveness_processing = True
+    try:
+        decoded, digest = await image_upload(image, MAX_FRAME_BYTES)
+        problem = capture.accept(digest, seq, time.monotonic())
+        if problem:
+            raise HTTPException(422, problem)
+        try:
+            result = await run_in_threadpool(verifier.inspect_liveness_frame, capture, decoded, digest, seq)
+        except CaptureError as exc:
+            capture.gestures.reset_action()
+            result = capture.result({'ready': False, 'warnings': [{'code': 'face_missing', 'message': str(exc)}], 'face_box': None})
+        except ModelUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        with sessions.lock:
+            if session.revision != revision:
+                raise HTTPException(409, 'Capture sudah diambil ulang.')
+            if result['done']:
+                session.liveness_nonce = None
+                session.liveness_result = result
+                # This proof is generated only after actual sequential inference.
+                if result['passed']:
+                    session.liveness_selfie = capture.selfie_hash
+                    session.liveness_proof = secrets.token_urlsafe(32)
+                    result = {**result, 'proof_token': session.liveness_proof}
+                session.stream_state = None
+                repository.audit('Liveness real time diperiksa', result['reason'], session.id)
+            result['image_size'] = [decoded.shape[1], decoded.shape[0]]
+            return result
+    finally:
+        with sessions.lock:
+            session.liveness_processing = False
 
 
 @router.post('/sessions/{session_id}/liveness/check')
@@ -95,12 +145,17 @@ async def check_liveness(session_id: str, request: Request, capture_nonce: str =
                          manifest: str = Form(...), selfie: UploadFile = File(...), frames: list[UploadFile] = File(...)):
     sessions,verifier,repository=services(request)
     session=sessions.get(session_id)
+    sessions.check_revision(session, request)
+    revision = session.revision
     metadata=frame_manifest(manifest,len(frames),session.challenges)
     selfie_image,selfie_hash=await image_upload(selfie)
     decoded,hashes=await frame_uploads(frames)
     span=(metadata[-1]['t_ms']-metadata[0]['t_ms'])/1000
     with sessions.lock:
         session=sessions.get(session_id)
+        sessions.check_revision(session, request)
+        if session.revision != revision or (session.stream_state and session.stream_state.sequence):
+            raise HTTPException(409, 'Capture berubah atau streaming sudah dimulai.')
         if not session.liveness_nonce or not secrets.compare_digest(session.liveness_nonce,capture_nonce) or session.consumed or session.processing or session.liveness_processing:
             raise HTTPException(409,'Token rekaman tidak valid atau sudah digunakan. Rekam ulang tantangan baru.')
         elapsed=time.monotonic()-session.liveness_started
@@ -115,6 +170,7 @@ async def check_liveness(session_id: str, request: Request, capture_nonce: str =
             result={'passed':False,'reason':str(exc),'mode':'real'}
         except ModelUnavailable as exc:
             raise HTTPException(503,str(exc)) from exc
+        session.stream_state = None
         session.liveness_result=result
         if result['passed']:
             session.liveness_hashes=hashes
@@ -155,10 +211,29 @@ def retry_session(session_id: str, request: Request):
     return session.public()
 
 
+class Retake(BaseModel):
+    stage: str = Field(pattern='^(document|liveness|holding)$')
+    nonce: str = Field(min_length=20, max_length=100)
+
+
+@router.post('/sessions/{session_id}/retake')
+def retake(session_id: str, body: Retake, request: Request):
+    sessions, _, repository = services(request)
+    with sessions.lock:
+        sessions.check_revision(sessions.get(session_id), request)
+        session = sessions.reset(session_id, body.stage, body.nonce)
+    repository.audit('Capture diambil ulang', f'Tahap {body.stage}; generasi {session.revision}; nonce diperbarui.', session.id)
+    return session.public()
+
+
 @router.post('/sessions/{session_id}/document')
 async def document(session_id: str, request: Request, image: UploadFile = File(...)):
     sessions, verifier, repository = services(request)
     session = sessions.get(session_id)
+    sessions.check_revision(session, request)
+    revision = session.revision
+    nonce = session.nonce
+    live_token = session.liveness_nonce
     if session.consumed or session.processing or session.liveness_processing:
         raise HTTPException(409, 'Sesi sudah diproses. Gunakan retry atau sesi baru.')
     decoded, digest = await image_upload(image)
@@ -170,13 +245,12 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
         raise HTTPException(503, str(exc)) from exc
     with sessions.lock:
         sessions.get(session_id)
-        if session.consumed or session.processing or session.liveness_processing:
-            raise HTTPException(409, 'Sesi sedang diproses.')
+        sessions.check_revision(session, request)
+        if session.revision != revision or session.nonce != nonce or session.liveness_nonce != live_token or session.consumed or session.processing or session.liveness_processing:
+            raise HTTPException(409, 'Capture berubah atau sesi sedang diproses.')
         session.document = decoded
         session.document_result = result
-        session.liveness_result = None
-        session.liveness_hashes = []
-        session.liveness_nonce = None
+        sessions.clear_liveness(session)
     repository.audit('OCR selesai', f'NIK terbaca; confidence {result["confidence"]:.3f}. Gambar tidak disimpan ke disk.', session.id)
     return result
 
@@ -188,7 +262,9 @@ async def capture_check(session_id: str, request: Request, image: UploadFile = F
         raise HTTPException(422,'Jenis capture tidak valid.')
     with sessions.lock:
         session=sessions.get(session_id)
-        if session.processing or session.consumed:
+        sessions.check_revision(session, request)
+        revision = session.revision
+        if session.processing or session.consumed or session.liveness_processing:
             raise HTTPException(409,'Sesi sudah diproses. Buat sesi baru atau retry.')
         now=time.monotonic()
         if now-session.last_preview<.5:
@@ -196,7 +272,11 @@ async def capture_check(session_id: str, request: Request, image: UploadFile = F
         session.last_preview=now
     decoded,_=await image_upload(image,MAX_FRAME_BYTES)
     try:
-        return await run_in_threadpool(verifier.inspect_capture, decoded, context=='holding')
+        result = await run_in_threadpool(verifier.inspect_capture, decoded, context=='holding')
+        with sessions.lock:
+            if session.revision != revision:
+                raise HTTPException(409, 'Capture sudah diambil ulang.')
+        return result
     except ModelUnavailable as exc:
         raise HTTPException(503,str(exc)) from exc
 
@@ -212,7 +292,8 @@ def identity(session_id: str, body: IdentityCorrection, request: Request):
     sessions, _, _ = services(request)
     with sessions.lock:
         session = sessions.get(session_id)
-        if session.consumed or not session.document_result:
+        sessions.check_revision(session, request)
+        if session.processing or session.liveness_processing or session.consumed or not session.document_result:
             raise HTTPException(409, 'OCR belum selesai atau sesi sudah diproses.')
         session.document_result['fields'].update(body.model_dump())
     return session.document_result['fields']
@@ -220,22 +301,38 @@ def identity(session_id: str, body: IdentityCorrection, request: Request):
 
 @router.post('/sessions/{session_id}/verify')
 async def verify(session_id: str, request: Request, nonce: str = Form(...),
-                 manifest: str = Form(...), selfie: UploadFile = File(...),
-                 holding: UploadFile = File(...), frames: list[UploadFile] = File(...)):
+                 selfie: UploadFile = File(...), holding: UploadFile = File(...),
+                 manifest: str = Form('[]'), frames: list[UploadFile] = File(default=[]),
+                 proof_token: str = Form('')):
     sessions, verifier, repository = services(request)
     session = sessions.get(session_id)
-    metadata=frame_manifest(manifest,len(frames),session.challenges)
-    face_image,selfie_hash=await image_upload(selfie)
-    holding_image,_=await image_upload(holding)
-    decoded_frames,hashes=await frame_uploads(frames)
+    sessions.check_revision(session, request)
+    revision = session.revision
+    # Legacy batch recordings remain readable; streaming proof has no upload of
+    # a client-authored challenge manifest or unverified replacement frames.
+    metadata, decoded_frames, hashes = [], [], []
+    if not proof_token:
+        metadata = frame_manifest(manifest, len(frames), session.challenges)
+        decoded_frames, hashes = await frame_uploads(frames)
+    elif frames or manifest != '[]':
+        raise HTTPException(422, 'Bukti streaming tidak menerima frame pengganti.')
+    face_image, selfie_hash = await image_upload(selfie)
+    holding_image, _ = await image_upload(holding)
     with sessions.lock:
+        sessions.check_revision(session, request)
+        if session.revision != revision:
+            raise HTTPException(409, 'Capture sudah diambil ulang.')
         if not session.liveness_result or not session.liveness_result.get('passed'):
-            raise HTTPException(422,'Liveness belum lolos pemeriksaan model. Rekam ulang sebelum melanjutkan.')
-        if hashes!=session.liveness_hashes or selfie_hash!=session.liveness_selfie or manifest_digest(metadata)!=session.liveness_manifest:
-            raise HTTPException(409,'Capture berbeda dari rekaman yang diperiksa. Rekam ulang liveness.')
+            raise HTTPException(422, 'Liveness belum lolos pemeriksaan model. Rekam ulang sebelum melanjutkan.')
+        if proof_token:
+            bound = session.liveness_proof and secrets.compare_digest(session.liveness_proof, proof_token) and session.liveness_result.get('stream')
+        else:
+            bound = hashes == session.liveness_hashes and manifest_digest(metadata) == session.liveness_manifest and not session.liveness_result.get('stream')
+        if not bound or selfie_hash != session.liveness_selfie:
+            raise HTTPException(409, 'Capture berbeda dari rekaman yang diperiksa. Rekam ulang liveness.')
         session = sessions.consume(session_id, nonce)
     try:
-        repository.audit('Verifikasi dimulai', f'Percobaan {session.attempt}; {len(frames)} frame; nonce dikonsumsi.', session.id)
+        repository.audit('Verifikasi dimulai', f'Percobaan {session.attempt}; nonce dikonsumsi.', session.id)
         result = await run_in_threadpool(verifier.run, session, face_image, holding_image, decoded_frames, metadata)
         session.last_result = result
         return result

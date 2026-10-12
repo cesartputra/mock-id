@@ -14,6 +14,9 @@ class CaptureSession:
     attempt: int = 1
     consumed: bool = False
     processing: bool = False
+    revision: int = 0
+    stream_state: object | None = None
+    liveness_proof: str | None = None
     last_preview: float = 0.0
     liveness_nonce: str | None = None
     liveness_started: float = 0.0
@@ -31,4 +34,4 @@ class CaptureSession:
     def public(self):
         return {'id': self.id, 'nonce': self.nonce, 'attempt': self.attempt,
                 'max_attempts': MAX_ATTEMPTS, 'expires_at': self.created + SESSION_TTL,
-                'challenges': self.challenges}
+                'challenges': self.challenges, 'revision': self.revision}

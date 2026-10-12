@@ -31,6 +31,11 @@ const shapes = {
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name] || shapes.verify}</svg>`;
 const names = {
+  home: "Beranda",
+  registration: "Pendaftaran",
+  postkyc: "Data permohonan",
+  receipt: "Bukti pendaftaran",
+  status: "Status layanan",
   dashboard: "Ringkasan",
   verify: "Verifikasi baru",
   queue: "Antrean manual",
@@ -103,7 +108,7 @@ let workspace = {
     settings: {},
     health: { ready: false, files: {} },
   },
-  page = "dashboard",
+  page = "home",
   flow = null,
   busy = false,
   queueQuery = "",
@@ -139,6 +144,9 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "X-Local-Client": "mock-id",
+      ...(flow && path.startsWith(`/sessions/${flow.session.id}/`)
+        ? { "X-Capture-Revision": String(flow.session.revision) }
+        : {}),
       ...(options.body instanceof FormData
         ? {}
         : { "Content-Type": "application/json" }),
@@ -175,7 +183,7 @@ function head(title, sub, action = "", eyebrow = "LOCAL IDENTITY INFERENCE") {
   return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${sub}</p></div>${action}</div>`;
 }
 function updateNav() {
-  for (const b of $$("nav button[data-page]")) {
+  for (const b of $$(".sidebar nav button[data-page]")) {
     const key = b.dataset.page;
     b.innerHTML = `${icon(key)}<span>${names[key]}</span>${key === "queue" ? `<span class="count">${workspace.records.filter((r) => ["manual", "scheduled"].includes(r.status)).length}</span>` : ""}`;
     b.classList.toggle("active", key === page);
@@ -185,8 +193,14 @@ function updateNav() {
   $("#crumb").textContent = names[page];
 }
 function render() {
+  document.body.classList.toggle("public-mode", publicPages.has(page));
   updateNav();
   const views = {
+    home: publicHome,
+    registration: publicRegistration,
+    postkyc: postKycView,
+    receipt: receiptView,
+    status: publicStatus,
     dashboard,
     verify: verifyView,
     queue: queueView,
@@ -196,7 +210,7 @@ function render() {
   $("#app").innerHTML = `<div class="screen-enter">${views[page]()}</div>`;
 }
 async function navigate(target) {
-  page = names[target] ? target : "dashboard";
+  page = names[target] ? target : "home";
   try {
     await reloadWorkspace();
     if (page === "verify" && !flow) await newFlow(false);
@@ -208,7 +222,7 @@ async function navigate(target) {
   }
 }
 async function newFlow(show = true) {
-  if (busy) return;
+  if (busy || captureResetting) return;
   stopCamera();
   $("#modal").close();
   releasePreviews();
@@ -302,7 +316,7 @@ function verifyView() {
     "Foto + KTP",
     "Hasil",
   ];
-  return `${head("Verifikasi identitas", "Capture dan analisis model open source, dijalankan secara lokal.", `<span class="badge green">REAL INFERENCE</span>`, "APPLICANT EXPERIENCE")}<div class="verification-layout"><section class="panel verification-panel"><div class="stepper">${stepNames.map((name, i) => `<div class="step ${flow.step === i ? "current" : flow.step > i ? "done" : ""}"><b>${flow.step > i ? "✓" : i + 1}</b>${name}</div>`).join("")}</div><div class="step-content">${busy ? '<h2>Memproses model…</h2><p class="step-description">Model memproses gambar atau rekaman sesuai tahap pemeriksaan di server lokal.</p><span class="spinner"></span><p class="state-note">Tunggu hasil backend. Waktu proses bergantung perangkat dan ukuran capture.</p>' : [documentView, identityView, livenessView, holdingView, resultView][flow.step]()}</div></section><aside class="verification-aside"><section class="panel session-card"><h3>Sesi backend</h3><div class="session-row"><span>ID</span><strong class="session-id">${esc(flow.session.id.slice(0, 8).toUpperCase())}</strong></div><div class="session-row"><span>Percobaan</span><strong>${flow.session.attempt} / ${flow.session.max_attempts}</strong></div><div class="session-row"><span>Berlaku sampai</span><strong>${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(flow.session.expires_at * 1000))} WIB</strong></div><div class="state-note">Nonce sekali pakai dan batas percobaan diperiksa oleh server. Sesi capture berakhir setelah 15 menit atau saat server dimulai ulang.</div></section><section class="panel scenario-card"><h3>Model yang digunakan</h3><p>Semua analisis foto menjalankan model. Tidak ada pemilih hasil simulasi.</p>${["PaddleOCR melalui RapidOCR", "YuNet + SFace", "PIPNet + MediaPipe Hand ONNX", "MiniFASNetV2", "ViT deepfake classifier", "FaceAttribNet: kacamata & masker"].map((n) => `<div class="model-runtime-line"><span class="green-dot"></span>${n}</div>`).join("")}<div class="simulation-note">Dukcapil adalah satu-satunya adapter mock. Hasil identitas resmi tetap “belum diverifikasi”.</div></section></aside></div>`;
+  return `${head("Verifikasi identitas", "Verifikasi identitas untuk pendaftaran debitur perseorangan.", `<span class="badge green">PERSEORANGAN · KYC LOKAL</span>`, "APPLICANT EXPERIENCE")}<div class="verification-layout"><section class="panel verification-panel"><div class="stepper">${stepNames.map((name, i) => `<div class="step ${flow.step === i ? "current" : flow.step > i ? "done" : ""}"><b>${flow.step > i ? "✓" : i + 1}</b>${name}</div>`).join("")}</div><div class="step-content">${busy ? '<h2>Memproses model…</h2><p class="step-description">Model memproses gambar atau rekaman sesuai tahap pemeriksaan di server lokal.</p><span class="spinner"></span><p class="state-note">Tunggu hasil backend. Waktu proses bergantung perangkat dan ukuran capture.</p>' : [documentView, identityView, livenessView, holdingView, resultView][flow.step]()}</div></section><aside class="verification-aside"><section class="panel session-card"><h3>Sesi verifikasi</h3><div class="session-row"><span>ID</span><strong class="session-id">${esc(flow.session.id.slice(0, 8).toUpperCase())}</strong></div><div class="session-row"><span>Percobaan</span><strong>${flow.session.attempt} / ${flow.session.max_attempts}</strong></div><div class="session-row"><span>Berlaku sampai</span><strong>${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(flow.session.expires_at * 1000))} WIB</strong></div><div class="state-note">Nonce sekali pakai dan batas percobaan diperiksa oleh server. Sesi capture berakhir setelah 15 menit atau saat server dimulai ulang.</div></section><section class="panel scenario-card"><h3>Model yang digunakan</h3><p>Semua analisis foto menjalankan model. Tidak ada pemilih hasil simulasi.</p>${["PaddleOCR melalui RapidOCR", "YuNet + SFace", "PIPNet + MediaPipe Hand ONNX", "MiniFASNetV2", "ViT deepfake classifier", "FaceAttribNet: kacamata & masker"].map((n) => `<div class="model-runtime-line"><span class="green-dot"></span>${n}</div>`).join("")}<div class="simulation-note">Dukcapil adalah satu-satunya adapter mock. Hasil identitas resmi tetap “belum diverifikasi”.</div></section></aside></div>`;
 }
 function documentView() {
   return `<h2>Foto KTP yang akan dibaca</h2><p class="step-description">Unggah atau ambil gambar KTP. Gunakan kartu utuh, teks tajam, dan pencahayaan yang merata.</p><div class="upload-zone">${icon("upload")}<h3>JPG, PNG, atau WebP</h3><p>Maksimal 5 MB / 16 megapiksel</p><div class="upload-buttons"><button class="button" data-camera="document">Buka kamera</button><button class="button primary" data-upload="document">Pilih gambar KTP</button><input type="file" id="document-file" accept="image/jpeg,image/png,image/webp" hidden aria-label="Unggah KTP"></div>${flow.documentURL ? `<img class="image-preview" src="${flow.documentURL}" alt="Pratinjau foto KTP">` : ""}</div><label class="scenario"><input type="checkbox" id="consent" ${flow.consent ? "checked" : ""}><span>Saya setuju memproses capture pada server lokal ini.<small>Foto tetap dalam memori sesi. Hasil dan audit disimpan di SQLite lokal.</small></span></label><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><span class="micro">NIK akan dibaca model, tanpa isian contoh.</span><button class="button primary" data-ocr ${flow.documentBlob && flow.consent ? "" : "disabled"}>Baca KTP ${icon("arrow")}</button></div>`;
@@ -326,7 +340,7 @@ const challengeText = {
   ],
 };
 function livenessView() {
-  return `<h2>Rekam tantangan liveness</h2><p class="step-description">Kamera mengambil frame gerakan. Backend menilai landmark mata, mulut, dan posisi kepala menggunakan PIPNet dan memeriksa anti-spoofing.</p><div class="challenge-list">${flow.session.challenges.map((c, i) => `<div class="challenge ${flow.livenessResult?.passed ? "complete" : ""}">${flow.livenessResult?.passed ? "✓" : i + 1} ${challengeText[c][0]}</div>`).join("")}</div><div class="capture capture-real">${flow.selfieURL ? `<img class="image-preview" src="${flow.selfieURL}" alt="Selfie dari rekaman liveness">` : `${icon("face")}<span>Wajah Anda akan muncul setelah rekaman.</span>`}</div><div class="upload-buttons" style="margin-top:18px"><button class="button primary" data-camera="liveness">${icon("face")} ${flow.frames.length ? "Rekam ulang tantangan" : "Buka kamera & rekam"}</button></div><p class="state-note">Setiap tantangan berlangsung ±5 detik. Ikuti ekspresi netral dahulu, kemudian instruksi gerakan. Semua frame diperiksa di backend; tidak ada tombol “lulus simulasi”.</p>${flow.frames.length ? `<div class="state-note" style="margin-top:18px">${flow.frames.length} frame terekam. Rekaman diperiksa model sebelum Anda dapat melanjutkan.</div>` : ""}${flow.livenessResult ? `<div class="capture-feedback ${flow.livenessResult.passed ? "clear" : "warning"}" role="status">${esc(flow.livenessResult.reason)}</div>` : `<div class="capture-feedback checking">Gunakan wajah langsung di kamera. Foto atau video pada layar akan diperiksa dengan tantangan gerakan dan anti-spoof.</div>`}<p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button class="button" data-back>Kembali</button><button class="button primary" data-next-holding ${flow.livenessResult?.passed ? "" : "disabled"}>Foto bersama KTP ${icon("arrow")}</button></div>`;
+  return `<h2>Liveness dengan deteksi langsung</h2><p class="step-description">Video kamera berjalan terus. Pemeriksaan membaca gerakan mata, senyum, dan arah kepala, sekaligus memeriksa risiko penggunaan foto atau layar.</p><div class="challenge-list">${flow.session.challenges.map((c, i) => `<div class="challenge ${flow.livenessResult?.passed ? "complete" : ""}">${flow.livenessResult?.passed ? "✓" : i + 1} ${challengeText[c][0]}</div>`).join("")}</div><div class="capture capture-real">${flow.selfieURL ? `<img class="image-preview" src="${flow.selfieURL}" alt="Selfie dari rekaman liveness">` : `${icon("face")}<span>Wajah Anda akan muncul setelah rekaman.</span>`}</div><div class="upload-buttons" style="margin-top:18px"><button class="button primary" data-camera="liveness">${icon("face")} ${flow.livenessResult ? "Ulangi pemeriksaan" : "Buka kamera & periksa"}</button></div><p class="state-note">Video diperiksa terus-menerus selama kamera aktif. Mulai dengan wajah netral, lalu ikuti instruksi. Tantangan berganti segera setelah model membaca gerakan; tidak ada hitung mundur 5 detik.</p>${flow.livenessResult?.frames ? `<div class="state-note" style="margin-top:18px">${flow.livenessResult.frames} frame diperiksa langsung oleh model.</div>` : ""}${flow.livenessResult ? `<div class="capture-feedback ${flow.livenessResult.passed ? "clear" : "warning"}" role="status">${esc(flow.livenessResult.reason)}</div>` : `<div class="capture-feedback checking">Gunakan wajah langsung di kamera. Foto atau video pada layar akan diperiksa dengan tantangan gerakan dan anti-spoof.</div>`}<p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button class="button" data-back>Kembali</button><button class="button primary" data-next-holding ${flow.livenessResult?.passed ? "" : "disabled"}>Foto bersama KTP ${icon("arrow")}</button></div>`;
 }
 function holdingView() {
   return `<h2>Foto diri sambil memegang KTP</h2><p class="step-description">Pegang KTP di bawah dagu. Wajah, tangan, kartu yang cukup besar, dan NIK harus terlihat jelas agar model dapat memeriksanya.</p><div class="kyc-preview">${flow.holdingURL ? `<img class="holding-image" src="${flow.holdingURL}" alt="Foto diri sambil memegang KTP">` : '<div class="kyc-placeholder"><span class="kyc-face-outline"></span><span class="kyc-card-outline">KTP</span><p>Wajah di atas · kartu dan tangan di bawah</p></div>'}</div><div class="kyc-guidance">${[
@@ -358,7 +372,18 @@ function resultView() {
     rejected: "Belum disetujui",
     scheduled: "Pemeriksaan terjadwal",
   };
-  return `<div class="result-banner"><div class="result-symbol ${statuses[r.status][1]}">${r.status === "pass" ? "✓" : r.status === "attack" ? "!" : "↻"}</div><h2>${titles[r.status]}</h2><p>${esc(r.reason)}</p>${badge(r.status)}</div><div class="score-grid"><div class="score"><small>Cosine wajah</small><strong>${r.scores.face_cosine?.toFixed(3) ?? "—"}</strong></div><div class="score"><small>Live probability</small><strong>${pct(r.scores.liveness)}</strong></div><div class="score"><small>Fake probability</small><strong>${pct(r.scores.deepfake)}</strong></div></div>${checkRows(r)}<div class="simulation-note">Dukcapil: mock. Identitas resmi belum diverifikasi, termasuk jika seluruh kontrol lokal terpenuhi.</div><div class="state-note">${esc(r.id)} · ${(r.duration_ms / 1000).toFixed(2)} detik inference server<br>Probabilitas model dan ambang belum dikalibrasi untuk penggunaan operasional.</div><div class="form-actions"><button class="button" data-export-result>${icon("download")} Ekspor hasil</button>${["capture", "technical"].includes(r.status) ? `<button class="button primary" data-retry ${flow.session.attempt >= flow.session.max_attempts ? "disabled" : ""}>Ulangi capture (${flow.session.attempt}/${flow.session.max_attempts})</button>` : ["manual", "scheduled"].includes(r.status) ? '<button class="button primary" data-page="queue">Lihat antrean manual</button>' : `<button class="button primary" data-detail="${r.id}">Detail pemeriksaan</button>`}</div><div style="margin-top:20px"><button class="button link" data-new>Mulai sesi baru →</button></div>`;
+  return `<div class="result-banner"><div class="result-symbol ${statuses[r.status][1]}">${r.status === "pass" ? "✓" : r.status === "attack" ? "!" : "↻"}</div><h2>${titles[r.status]}</h2><p>${esc(r.reason)}</p>${badge(r.status)}</div><div class="score-grid"><div class="score"><small>Cosine wajah</small><strong>${r.scores.face_cosine?.toFixed(3) ?? "—"}</strong></div><div class="score"><small>Live probability</small><strong>${pct(r.scores.liveness)}</strong></div><div class="score"><small>Fake probability</small><strong>${pct(r.scores.deepfake)}</strong></div></div>${checkRows(r)}<div class="simulation-note">Dukcapil: mock. Identitas resmi belum diverifikasi, termasuk jika seluruh kontrol lokal terpenuhi.</div><div class="state-note">${esc(r.id)} · ${(r.duration_ms / 1000).toFixed(2)} detik inference server<br>Probabilitas model dan ambang belum dikalibrasi untuk penggunaan operasional.</div>${r.status === "pass" ? `<div class="registration-notice success">${icon("check")}<div><strong>Verifikasi lokal berhasil</strong><p>Lanjutkan untuk melengkapi permohonan iDeb pada demo ini.</p></div><button class="button primary" data-continue-registration>Lanjut ke pendaftaran ${icon("arrow")}</button></div>` : ""}<div class="form-actions"><button class="button" data-export-result>${icon("download")} Ekspor hasil</button>${["capture", "technical"].includes(r.status) ? `<button class="button primary" data-retry ${flow.session.attempt >= flow.session.max_attempts ? "disabled" : ""}>Ulangi capture (${flow.session.attempt}/${flow.session.max_attempts})</button>` : ["manual", "scheduled"].includes(r.status) ? '<button class="button primary" data-page="queue">Lihat antrean manual</button>' : `<button class="button primary" data-detail="${r.id}">Detail pemeriksaan</button>`}</div><div class="retake-options"><span>Ambil ulang dalam sesi ini:</span>${[
+    ["document", "OCR KTP"],
+    ["liveness", "Liveness"],
+    ["holding", "Foto + KTP"],
+  ]
+    .map(
+      ([stage, label]) =>
+        `<button class="button" data-retake="${stage}" ${flow.session.attempt >= flow.session.max_attempts ? "disabled" : ""}>${label}</button>`,
+    )
+    .join(
+      "",
+    )}</div><div style="margin-top:20px"><button class="button link" data-new>Mulai sesi baru →</button></div>`;
 }
 function queueRecords() {
   return workspace.records.filter(
@@ -438,6 +463,7 @@ async function withBusy(action) {
 }
 async function readDocument() {
   if (!flow.documentBlob || !flow.consent) return;
+  if (flow.ocr || flow.result) await prepareCapture("document", true);
   const data = new FormData();
   data.append("image", flow.documentBlob, "ktp.jpg");
   await withBusy(async () => {
@@ -462,15 +488,13 @@ async function runVerification() {
     throw new Error(
       "Selesaikan pemeriksaan liveness dan perbaiki foto wajah sebelum melanjutkan.",
     );
-  if (!flow.holdingBlob || !flow.selfieBlob || !flow.frames.length) return;
+  if (!flow.holdingBlob || !flow.selfieBlob || !flow.livenessResult.proof_token)
+    return;
   const data = new FormData();
   data.append("nonce", flow.session.nonce);
-  data.append("manifest", JSON.stringify(flow.manifest));
+  data.append("proof_token", flow.livenessResult.proof_token);
   data.append("selfie", flow.selfieBlob, "selfie.jpg");
   data.append("holding", flow.holdingBlob, "holding.jpg");
-  flow.frames.forEach((blob, i) =>
-    data.append("frames", blob, `frame-${i}.jpg`),
-  );
   await withBusy(async () => {
     flow.result = await api(`/sessions/${flow.session.id}/verify`, {
       method: "POST",
@@ -480,26 +504,51 @@ async function runVerification() {
     await reloadWorkspace();
   });
 }
-async function retry() {
-  const updated = await api(`/sessions/${flow.session.id}/retry`, {
-    method: "POST",
-  });
-  flow.session = updated;
-  flow.step = 0;
-  flow.result = null;
-  flow.frames = [];
-  flow.manifest = [];
-  flow.selfieBlob = null;
-  flow.selfieURL = null;
-  flow.holdingBlob = null;
-  flow.holdingURL = null;
-  flow.holdingFeedback = null;
-  flow.livenessResult = null;
-  render();
-  toast("Percobaan baru. Ambil ulang capture dan ikuti urutan tantangan baru.");
+let captureResetting = false;
+async function prepareCapture(stage, keepInput = false) {
+  if (busy || captureResetting)
+    throw new Error("Tunggu pemeriksaan yang sedang berjalan.");
+  captureResetting = true;
+  stopCamera();
+  const currentFlow = flow;
+  try {
+    const updated = await api(`/sessions/${flow.session.id}/retake`, {
+      method: "POST",
+      body: JSON.stringify({ stage, nonce: flow.session.nonce }),
+    });
+    if (flow !== currentFlow) return;
+    flow.session = updated;
+    flow.result = null;
+    const clear = (kind) => {
+      if (flow[kind + "URL"]) URL.revokeObjectURL(flow[kind + "URL"]);
+      flow[kind + "Blob"] = null;
+      flow[kind + "URL"] = null;
+    };
+    clear("holding");
+    flow.holdingFeedback = null;
+    if (stage !== "holding") {
+      clear("selfie");
+      flow.livenessResult = null;
+      flow.frames = [];
+      flow.manifest = [];
+    }
+    if (stage === "document") {
+      flow.ocr = null;
+      if (!keepInput) clear("document");
+    }
+  } finally {
+    captureResetting = false;
+  }
 }
-async function setImage(blob, kind, checked = null) {
+async function retry(stage = "document") {
+  await prepareCapture(stage);
+  flow.step = { document: 0, liveness: 2, holding: 3 }[stage];
+  render();
+  toast("Capture lama dibersihkan. Ambil ulang dalam sesi yang sama.");
+}
+async function setImage(blob, kind, checked = null, prepared = false) {
   if (!blob) return;
+  const selectedFlow = flow;
   if (blob.size > 5 * 1024 * 1024)
     throw new Error("Ukuran gambar maksimal 5 MB.");
   if (!["image/jpeg", "image/png", "image/webp"].includes(blob.type))
@@ -514,6 +563,15 @@ async function setImage(blob, kind, checked = null) {
   }
   if (image.width * image.height > 16_000_000)
     throw new Error("Gambar maksimal 16 megapiksel.");
+  if (flow !== selectedFlow) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+  if (!prepared) await prepareCapture(kind);
+  if (flow !== selectedFlow) {
+    URL.revokeObjectURL(url);
+    return;
+  }
   flow[kind + "Blob"] = blob;
   flow[kind + "URL"] = url;
   if (kind === "holding" && checked) {
@@ -565,14 +623,16 @@ function stopCamera() {
   cameraKind = null;
 }
 async function openCamera(kind) {
-  if (busy) return;
+  if (busy || captureResetting) return;
+  await prepareCapture(kind);
+  render();
   modal(
     kind === "liveness"
-      ? "Rekam tantangan liveness"
+      ? "Pemeriksaan liveness langsung"
       : kind === "holding"
         ? "Foto diri memegang KTP"
         : "Foto KTP",
-    `<p>${kind === "liveness" ? "Ikuti tiga tantangan dari server. Setiap tantangan dimulai dengan wajah netral." : kind === "holding" ? "Pegang KTP di bawah dagu. Tampilkan wajah, tangan, dan seluruh teks kartu." : "Dekatkan KTP ke kamera agar teks terlihat tajam."}</p><div class="camera-preview"><video id="camera-video" autoplay playsinline muted aria-label="Pratinjau kamera"></video><div class="camera-overlay ${kind === "holding" ? "holding" : kind === "document" ? "document" : ""}"><span class="camera-face-guide"></span>${kind !== "liveness" ? '<span class="camera-card-guide">KTP</span>' : ""}</div></div><div class="camera-live-prompt" id="camera-prompt">Menunggu kamera…</div><div class="capture-feedback checking" id="camera-feedback" role="status" aria-live="polite">${kind === "document" ? "Dekatkan kartu agar NIK tajam." : "Memeriksa wajah dan risiko foto/layar…"}</div><p class="state-note" id="camera-status">Izinkan kamera jika browser meminta.</p><div class="form-actions"><button class="button" data-close>Batal</button><button class="button primary" ${kind === "liveness" ? "data-record" : "data-photo"} disabled>${kind === "liveness" ? "Mulai rekaman" : "Ambil foto"}</button></div>`,
+    `<p>${kind === "liveness" ? "Ikuti tiga tantangan dari server. Setiap tantangan dimulai dengan wajah netral." : kind === "holding" ? "Pegang KTP di bawah dagu. Tampilkan wajah, tangan, dan seluruh teks kartu." : "Dekatkan KTP ke kamera agar teks terlihat tajam."}</p><div class="camera-preview"><video id="camera-video" autoplay playsinline muted aria-label="Pratinjau kamera"></video><canvas id="camera-detection" aria-hidden="true"></canvas><div class="camera-overlay ${kind === "holding" ? "holding" : kind === "document" ? "document" : ""}"><span class="camera-face-guide"></span>${kind !== "liveness" ? '<span class="camera-card-guide">KTP</span>' : ""}</div></div><div class="live-challenge-progress" id="live-challenge-progress"></div><div class="camera-live-prompt" id="camera-prompt">Menunggu kamera…</div><div class="capture-feedback checking" id="camera-feedback" role="status" aria-live="polite">${kind === "document" ? "Dekatkan kartu agar NIK tajam." : "Memeriksa wajah dan risiko foto/layar…"}</div><p class="state-note" id="camera-status">Izinkan kamera jika browser meminta.</p><div class="form-actions"><button class="button" data-close>Batal</button><button class="button primary" ${kind === "liveness" ? "data-record" : "data-photo"} disabled>${kind === "liveness" ? "Mulai pemeriksaan langsung" : "Ambil foto"}</button></div>`,
   );
   cameraKind = kind;
   const token = cameraToken;
@@ -666,11 +726,23 @@ async function monitorCamera(token) {
   const timeout = setTimeout(() => cameraCheckAbort?.abort(), 4000);
   try {
     const blob = await captureBlob(640, 0.75);
+    if (token !== cameraToken || cameraCheckingPaused) return;
     const result = await inspectBlob(blob, cameraKind, cameraCheckAbort.signal);
-    if (token !== cameraToken) return;
+    if (token !== cameraToken || cameraCheckingPaused) return;
+    drawFaceDetection(
+      result.face_box,
+      [
+        640,
+        Math.round(
+          (640 * $("#camera-video").videoHeight) /
+            $("#camera-video").videoWidth,
+        ),
+      ],
+      result.ready,
+    );
     showCameraFeedback(cameraFeedback.update(result, performance.now()));
   } catch (error) {
-    if (token !== cameraToken) return;
+    if (token !== cameraToken || cameraCheckingPaused) return;
     showCameraFeedback(
       cameraFeedback.update(
         {
@@ -717,6 +789,7 @@ async function takePhoto() {
   cameraCheckAbort?.abort();
   try {
     const blob = await captureBlob();
+    if (token !== cameraToken) return;
     let checked = null;
     if (kind !== "document") {
       await delay(550);
@@ -730,7 +803,7 @@ async function takePhoto() {
     }
     stopCamera();
     $("#modal").close();
-    await setImage(blob, kind, checked);
+    await setImage(blob, kind, checked, true);
     toast("Foto siap untuk diproses oleh model.");
   } finally {
     if (token === cameraToken && stream) {
@@ -743,16 +816,68 @@ async function takePhoto() {
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function drawFaceDetection(box, size, ready) {
+  const canvas = $("#camera-detection"),
+    video = $("#camera-video");
+  if (!canvas || !video) return;
+  canvas.width = video.clientWidth;
+  canvas.height = video.clientHeight;
+  const ctx = canvas.getContext("2d");
+  if (!box || !size?.[0] || !size?.[1]) return;
+  // Map inference coordinates through object-fit: contain, including letterbox.
+  const scale = Math.min(canvas.width / size[0], canvas.height / size[1]);
+  const left = (canvas.width - size[0] * scale) / 2;
+  const top = (canvas.height - size[1] * scale) / 2;
+  ctx.strokeStyle = ready ? "#c4ef94" : "#ffbd79";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(
+    left + box[0] * scale,
+    top + box[1] * scale,
+    box[2] * scale,
+    box[3] * scale,
+  );
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.font = "600 13px sans-serif";
+  ctx.fillText(
+    ready ? "Wajah terdeteksi" : "Perbaiki posisi / capture",
+    left + box[0] * scale,
+    Math.max(16, top + box[1] * scale - 8),
+  );
+}
+function showLiveProgress(result) {
+  const completed = result.completed.map((item) => item.challenge);
+  $("#live-challenge-progress").innerHTML = flow.session.challenges
+    .map(
+      (c, i) =>
+        `<span class="${completed.includes(c) ? "complete" : result.challenge === c ? "active" : ""}">${completed.includes(c) ? "✓" : i + 1} ${challengeText[c][0]}</span>`,
+    )
+    .join("");
+  const action =
+    result.challenge === "turn"
+      ? `Putar kepala ke ${result.turn_direction > 0 ? "kiri" : "kanan"} Anda`
+      : result.challenge === "blink" && result.blink_closed
+        ? "Buka mata kembali"
+        : result.challenge
+          ? challengeText[result.challenge][0]
+          : "Semua gerakan terbaca";
+  $("#camera-prompt").textContent =
+    result.phase === "neutral"
+      ? "Wajah netral, mata terbuka, lihat kamera"
+      : action;
+  $("#camera-status").textContent =
+    `${completed.length}/3 gerakan terpenuhi. ${result.phase === "neutral" ? "Tatap kamera dan rilekskan wajah sebelum gerakan berikutnya." : "Ikuti instruksi; tantangan berganti setelah gerakan terbaca."}`;
+}
 async function recordChallenges() {
   const button = $("[data-record]");
   if (!button || !stream || !cameraFeedback.state(performance.now()).ready)
     return;
   button.disabled = true;
   recording = true;
+  cameraCheckingPaused = true;
+  clearTimeout(cameraCheckTimer);
+  cameraCheckAbort?.abort();
   const token = cameraToken,
-    currentFlow = flow,
-    frames = [],
-    manifest = [];
+    currentFlow = flow;
   let selfie = null;
   try {
     const capture = await api(`/sessions/${flow.session.id}/liveness/start`, {
@@ -762,73 +887,79 @@ async function recordChallenges() {
     flow.session = { ...flow.session, ...capture };
     flow.livenessResult = null;
     const started = performance.now();
-    for (let group = 0; group < capture.challenges.length; group++) {
-      const challenge = capture.challenges[group];
-      for (let i = 0; i < 14; i++) {
-        if (token !== cameraToken || flow !== currentFlow) return;
-        if (cameraFeedback.mustStopRecording(performance.now()))
-          throw new Error(
-            cameraFeedback
-              .state(performance.now())
-              .warnings.map((w) => w.message)
-              .join(" "),
-          );
-        $("#camera-prompt").textContent =
-          `${group + 1}/3 · ${i < 4 ? "Wajah netral, lihat kamera" : challengeText[challenge][0]}`;
-        $("#camera-status").textContent =
-          `${i < 4 ? "Bersiap…" : challengeText[challenge][1]} · ${14 - i} frame tersisa`;
-        const blob = await captureBlob(640, 0.75);
-        frames.push(blob);
-        manifest.push({
-          challenge,
-          t_ms: Math.round(performance.now() - started),
+    for (let seq = 0; seq < 360; seq++) {
+      if (token !== cameraToken || flow !== currentFlow || !stream) return;
+      if (performance.now() - started > 90_000)
+        throw new Error("Pemeriksaan terlalu lama. Ulangi liveness.");
+      const frameStarted = performance.now();
+      const blob = await captureBlob(960, 0.9);
+      const data = new FormData();
+      data.append("capture_nonce", capture.capture_nonce);
+      data.append("seq", String(seq));
+      data.append("image", blob, "frame.jpg");
+      cameraCheckAbort = new AbortController();
+      const timeout = setTimeout(() => cameraCheckAbort?.abort(), 12000);
+      let result;
+      try {
+        result = await api(`/sessions/${flow.session.id}/liveness/frame`, {
+          method: "POST",
+          body: data,
+          signal: cameraCheckAbort.signal,
         });
-        if (group === 0 && i === 2) selfie = await captureBlob(1920, 0.95);
-        await delay(350);
+      } finally {
+        clearTimeout(timeout);
       }
+      if (token !== cameraToken || flow !== currentFlow) return;
+      if (result.selfie_seq === seq) selfie = blob;
+      showLiveProgress(result);
+      drawFaceDetection(
+        result.feedback.face_box,
+        result.image_size,
+        result.feedback.ready,
+      );
+      showCameraFeedback(
+        cameraFeedback.update(result.feedback, performance.now()),
+      );
+      if (result.done) {
+        flow.livenessResult = result;
+        if (!result.passed) throw new Error(result.reason);
+        if (!selfie)
+          throw new Error(
+            "Selfie terikat rekaman belum tersedia. Ulangi pemeriksaan.",
+          );
+        flow.selfieBlob = selfie;
+        flow.selfieURL = preview(selfie);
+        stopCamera();
+        $("#modal").close();
+        render();
+        toast("Gerakan wajah, kontinuitas, dan anti-spoof terpenuhi.");
+        return;
+      }
+      // One request in flight. Camera video remains continuous; inference rate
+      // follows CPU capacity, with no fixed duration for individual gestures.
+      await delay(Math.max(0, 110 - (performance.now() - frameStarted)));
     }
-    if (token !== cameraToken) return;
-    stopCamera();
-    $("#modal").close();
-    flow.selfieBlob = selfie;
-    flow.selfieURL = preview(selfie);
-    flow.frames = [];
-    flow.manifest = [];
-    const data = new FormData();
-    data.append("capture_nonce", capture.capture_nonce);
-    data.append("manifest", JSON.stringify(manifest));
-    data.append("selfie", selfie, "selfie.jpg");
-    frames.forEach((blob, i) => data.append("frames", blob, `frame-${i}.jpg`));
-    await withBusy(async () => {
-      const result = await api(`/sessions/${flow.session.id}/liveness/check`, {
-        method: "POST",
-        body: data,
-      });
-      if (flow !== currentFlow) return;
-      flow.livenessResult = result;
-      flow.frames = frames;
-      flow.manifest = manifest;
-    });
-    toast(
-      flow.livenessResult.passed
-        ? "Liveness diperiksa dan terpenuhi."
-        : flow.livenessResult.reason,
-    );
+    throw new Error("Batas frame tercapai. Ulangi pemeriksaan liveness.");
   } catch (error) {
-    if (flow !== currentFlow) return;
-    flow.livenessResult = { passed: false, reason: error.message };
-    flow.frames = [];
-    flow.manifest = [];
-    if (token === cameraToken && $("#modal").open) {
-      recording = false;
-      $("#camera-status").textContent = error.message;
-      button.disabled = !cameraFeedback.state(performance.now()).ready;
-    } else {
-      render();
-      errorMessage(error);
-    }
+    if (flow !== currentFlow || token !== cameraToken) return;
+    flow.livenessResult = {
+      passed: false,
+      reason:
+        error.name === "AbortError"
+          ? "Pemeriksaan frame terputus. Ulangi liveness."
+          : error.message,
+    };
+    flow.selfieBlob = null;
+    flow.selfieURL = null;
+    $("#camera-status").textContent = flow.livenessResult.reason;
+    button.textContent = "Ulangi pemeriksaan langsung";
   } finally {
-    recording = false;
+    if (token === cameraToken && flow === currentFlow) {
+      recording = false;
+      cameraCheckingPaused = false;
+      if (stream)
+        cameraCheckTimer = setTimeout(() => monitorCamera(token), 750);
+    }
   }
 }
 
@@ -865,7 +996,7 @@ function exportCSV(name, head, rows) {
 function help() {
   modal(
     "Proyek real inference",
-    `<p>Backend FastAPI menjalankan OCR, face matching, landmark wajah/tangan, anti-spoofing, dan classifier deepfake dari bobot open source lokal.</p><p>Dukcapil memakai mock dan selalu mengembalikan “belum diverifikasi”. Tidak ada pemilih skenario, hasil preset, atau skor buatan.</p><p>Foto dan frame berada dalam memori sesi; nama, NIK tersamarkan, hasil pemeriksaan, serta audit berada di SQLite. Model image deepfake dan pemeriksaan landmark belum menjamin ketahanan terhadap semua serangan.</p><p>API interaktif tersedia di <a href="/docs" target="_blank" rel="noopener">/docs</a>. Untuk request yang mengubah data, sertakan header X-Local-Client: mock-id.</p><button class="button primary" data-close>Tutup</button>`,
+    `<p>Backend FastAPI menjalankan OCR, face matching, landmark wajah/tangan, anti-spoofing, dan classifier deepfake dari bobot open source lokal.</p><p>Dukcapil memakai mock dan selalu mengembalikan “belum diverifikasi”. Tidak ada hasil preset atau skor buatan pada pemeriksaan KYC. Halaman pratinjau formulir lanjutan diberi label dan tidak menerbitkan bukti KYC.</p><p>Foto dan frame berada dalam memori sesi; nama, NIK tersamarkan, hasil pemeriksaan, serta audit berada di SQLite. Model image deepfake dan pemeriksaan landmark belum menjamin ketahanan terhadap semua serangan.</p><p>API interaktif tersedia di <a href="/docs" target="_blank" rel="noopener">/docs</a>. Untuk request yang mengubah data, sertakan header X-Local-Client: mock-id.</p><button class="button primary" data-close>Tutup</button>`,
   );
 }
 document.addEventListener("click", async (event) => {
@@ -895,6 +1026,7 @@ document.addEventListener("click", async (event) => {
       render();
     } else if (button.hasAttribute("data-verify")) await runVerification();
     else if (button.hasAttribute("data-retry")) await retry();
+    else if (button.dataset.retake) await retry(button.dataset.retake);
     else if (button.dataset.detail) detail(button.dataset.detail);
     else if (button.hasAttribute("data-export-result"))
       exportFile(
@@ -1028,4 +1160,4 @@ window.addEventListener("beforeunload", () => {
   stopCamera();
   releasePreviews();
 });
-navigate(location.hash.slice(1) || "dashboard");
+navigate(location.hash.slice(1) || "home");

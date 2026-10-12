@@ -1,0 +1,12 @@
+{
+  "timezone": "Asia/Jakarta",
+  "workdays": [0, 1, 2, 3, 4],
+  "opens": "08:00",
+  "closes": "17:00",
+  "daily_capacity": 10,
+  "holidays": [],
+  "booking_horizon_days": 14,
+  "decision_ttl_hours": 24,
+  "retention_days": 21,
+  "label": "Contoh demo — bukan SOP OJK"
+}

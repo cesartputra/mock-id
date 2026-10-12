@@ -8,8 +8,9 @@ from app.model.entities import CaptureSession
 
 
 class SessionService:
-    def __init__(self):
+    def __init__(self, registry=None):
         self.items = {}
+        self.registry = registry
         self.lock = threading.RLock()
 
     def purge(self):
@@ -17,18 +18,22 @@ class SessionService:
             cutoff = time.time() - SESSION_TTL
             self.items = {k: v for k, v in self.items.items() if v.created > cutoff or v.processing or v.liveness_processing}
 
-    def create(self):
+    def create(self, owner_id=None, application_id=None, revision=0):
         with self.lock:
             self.purge()
             if len(self.items) >= 20:
                 raise HTTPException(429, 'Terlalu banyak sesi aktif. Tunggu sesi kedaluwarsa.')
-            session = CaptureSession()
+            session = CaptureSession(owner_id=owner_id, application_id=application_id, revision=revision)
+            if self.registry:self.registry.register(session.id,SESSION_TTL)
             self.items[session.id] = session
             return session
 
     def get(self, session_id):
         with self.lock:
             session = self.items.get(session_id)
+            if not session and self.registry:
+                owner=self.registry.owner(session_id)
+                if owner and owner!=self.registry.gateway_id:raise HTTPException(409,{'code':'CAPTURE_GATEWAY_REQUIRED','gateway_id':owner,'message':'Arahkan frame ke gateway pemilik sesi yang sama.'})
             if not session or time.time() - session.created > SESSION_TTL:
                 if session and not session.processing and not session.liveness_processing:
                     self.items.pop(session_id, None)
@@ -69,6 +74,7 @@ class SessionService:
                 'reason': (s.last_result or {}).get('reason', 'Perbaiki tahap yang belum terpenuhi.')}
 
     def clear_liveness(self, s):
+        s.evidence_frames = []
         s.liveness_result = None
         s.liveness_hashes = []
         s.liveness_nonce = None
@@ -85,6 +91,11 @@ class SessionService:
         # clients bind every asynchronous request to a capture generation.
         if revision is not None and revision != str(s.revision):
             raise HTTPException(409, 'Capture lama sudah dibersihkan. Gunakan pengambilan terbaru.')
+        if s.application_id:
+            flow=request.app.state.workflow
+            with flow.repository.connect() as con:
+                application=flow.get(con,s.application_id)
+                if application['revision']!=s.revision:raise HTTPException(409,'Sesi kamera lama sudah diganti oleh pengambilan terbaru.')
 
     def reset(self, session_id, stage, nonce):
         with self.lock:
@@ -100,6 +111,10 @@ class SessionService:
                     raise HTTPException(429, 'Batas percobaan tercapai. Buat sesi baru.')
                 s.attempt += 1
                 s.liveness_attempts = 0
+            count=s.retake_attempts.get(stage,0)
+            if count>=MAX_ATTEMPTS:raise HTTPException(429,'Batas pengambilan ulang tahap ini tercapai. Buat permohonan baru.')
+            s.retake_attempts={**s.retake_attempts,stage:count+1}
+            s.proof_checked_revision=None
             s.revision += 1
             s.consumed = False
             s.nonce = secrets.token_urlsafe(32)
@@ -108,6 +123,7 @@ class SessionService:
             if stage == 'liveness' or not (s.liveness_result and s.liveness_result.get('passed')):
                 self.clear_liveness(s)
             if stage == 'document':
+                s.document_digest = None
                 s.document = None
                 s.document_result = None
             return s

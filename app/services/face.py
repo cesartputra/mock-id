@@ -51,4 +51,4 @@ class FaceService:
     def compare(self, a, face_a, b, face_b):
         fa, _ = self.feature(a, face_a)
         fb, _ = self.feature(b, face_b)
-        return round(float(self.recognizer.match(fa, fb, cv2.FaceRecognizerSF_FR_COSINE)), 5)
+        return float(self.recognizer.match(fa, fb, cv2.FaceRecognizerSF_FR_COSINE))

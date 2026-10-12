@@ -42,6 +42,6 @@ class OCRService:
         lines = list(result.txts or [])
         scores = [float(v) for v in (result.scores or [])]
         return {'fields': parse_identity(lines), 'lines': lines,
-                'confidence': round(float(np.mean(scores)) if scores else 0.0, 4),
+                'confidence': float(np.mean(scores)) if scores else 0.0,
                 'boxes': result.boxes.tolist() if result.boxes is not None else [],
                 'engine': 'RapidOCR / PaddleOCR ONNX', 'mode': 'real'}

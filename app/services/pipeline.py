@@ -1,4 +1,7 @@
 import hashlib
+import hmac
+import secrets
+import os
 import logging
 import threading
 import time
@@ -10,7 +13,7 @@ from app.model.repository import utcnow
 from app.services.imaging import CaptureError, card_region, quality
 from app.services.ocr import OCRService
 from app.services.face import FaceService
-from app.services.antispoof import AntiSpoofService, PAD_FILE, PAD_MODEL
+from app.services.antispoof import AntiSpoofService, create_pad_service, PAD_FILE, PAD_MODEL
 from app.services.deepfake import DeepfakeService
 from app.services.landmarks import LandmarkService
 from app.services.dukcapil import DukcapilService
@@ -38,13 +41,14 @@ class VerificationService:
         self.dukcapil = DukcapilService()
         self.last_error = None
         self.assets_verified = False
+        self.subject_key = secrets.token_bytes(32)
 
     def availability(self):
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
         return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
-                'last_error': self.last_error, 'dukcapil': 'mock', 'inference': 'real', 'pad_model': PAD_MODEL,
-                'pad_runtime': dict(self.pad.model.status) if self.pad else {**pad_policy(), 'loaded': False, 'providers': []},
+                'last_error': self.last_error, 'dukcapil': 'mock' if os.getenv('MOCK_ID_MODE','demo')=='demo' else 'official_not_configured', 'inference': 'real', 'pad_model': PAD_MODEL,
+                'pad_runtime': dict(self.pad.model.status) if self.pad else ({'requested':'remote','selected':'remote','runtime':'Remote PAD · menunggu respons worker','fallback_reason':None,'loaded':False,'providers':[]} if os.getenv('MOCK_ID_PAD_WORKER_URL') else {**pad_policy(), 'loaded': False, 'providers': []}),
                 'other_runtime': 'CPU (OCR, wajah, landmark, tangan, penutup wajah, diagnostik)'}
 
     def load(self):
@@ -58,7 +62,7 @@ class VerificationService:
             self.assets_verified = True
         if self.deepfake is None:
             face = self.face or FaceService()
-            pad = self.pad or AntiSpoofService()
+            pad = self.pad or create_pad_service()
             deepfake = DeepfakeService()
             landmarks = self.landmarks or LandmarkService(face)
             visibility = self.visibility or FaceVisibilityService(face, landmarks)
@@ -80,7 +84,7 @@ class VerificationService:
                 self.face,self.landmarks,self.visibility=face,landmarks,visibility
             result=self.visibility.inspect(image,holding)
             if result.get('face_box') is not None:
-                self.pad=self.pad or AntiSpoofService()
+                self.pad=self.pad or create_pad_service()
                 face=self.face.faces(image)[0]
                 pad=self.pad.score(image,face)
                 result['pad']=pad
@@ -113,7 +117,7 @@ class VerificationService:
                     return blocked('portrait_missing', 'Potret wajah pada KTP belum terdeteksi. Dekatkan kartu dan tampilkan seluruh potret dengan jelas.')
                 return {'ready': True, 'complete': True, 'context': context,
                         'warnings': [], 'nik_readable': True,
-                        'subject_key': hashlib.sha256(reading['fields']['nik'].encode()).hexdigest(),
+                        'subject_key': hmac.new(self.subject_key, reading['fields']['nik'].encode(), hashlib.sha256).hexdigest(),
                         'ocr_confidence': reading['confidence'], 'face_box': [round(float(v)) for v in face[:4]], 'mode': 'real'}
             feedback = self.inspect_capture(image, holding=True)
             if not feedback['ready']:
@@ -133,7 +137,7 @@ class VerificationService:
                 return {**feedback, 'complete': True, 'context': context,
                         'nik_readable': True, 'nik_matches': True, 'hand_detected': True,
                         'card_box': card['box'], 'face_cosine': cosine,
-                        'subject_key': hashlib.sha256(identity['nik'].encode()).hexdigest()}
+                        'subject_key': hmac.new(self.subject_key, identity['nik'].encode(), hashlib.sha256).hexdigest()}
             except CaptureError as exc:
                 return blocked('holding_unreadable', str(exc), feedback)
         finally:
@@ -168,7 +172,10 @@ class VerificationService:
                 return result
             capture.cosine_min = min(capture.cosine_min, cosine)
             capture.pad_min = min(capture.pad_min, feedback['pad']['live_probability'])
+            before = len(capture.gestures.completed)
             capture.gestures.update(metrics)
+            if len(capture.gestures.completed) > before:
+                capture.evidence_images.append(image.copy())
             return capture.result(feedback, metrics)
 
     def evaluate_liveness(self, session, selfie, frames, manifest):
@@ -309,7 +316,7 @@ class VerificationService:
                         'reference_threshold': rules['deepfake_risk'],
                         'message': 'Classifier belum dikalibrasi untuk capture KYC. Skor disimpan sebagai diagnostik dan tidak menentukan kelulusan.'})
                 except Exception:
-                    log.exception('Image diagnostic unavailable for session %s', session.id)
+                    log.error('Image diagnostic unavailable for session %s', session.id)
                     diagnostic.update(status='unavailable', detail={
                         'message': 'Analisis gambar tambahan tidak tersedia; keputusan memakai kontrol KYC utama.'})
                 checks.append(diagnostic)
@@ -331,15 +338,18 @@ class VerificationService:
             reason = str(exc) if isinstance(exc, ModelUnavailable) else 'Pemrosesan model mengalami gangguan. Lihat log server dan coba ulang.'
             retry = {'stage': 'verify', 'label': 'Jalankan pemeriksaan ulang', 'reason': reason}
             self.last_error = reason
-            log.exception('Inference failed for session %s', session.id)
+            log.error('Inference failed for session %s; type %s', session.id, type(exc).__name__)
             checks.append({'name': 'Ketersediaan inference', 'status': 'unavailable', 'detail': {'message': reason}, 'mode': 'real'})
         dukcapil = self.dukcapil.check(identity)
-        checks.append({'name': 'Dukcapil', 'status': 'not_verified', 'detail': dukcapil, 'mode': 'mock'})
+        checks.append({'name': 'Dukcapil', 'status': 'passed' if dukcapil['identity_verified'] else 'not_verified', 'detail': dukcapil, 'mode': dukcapil['mode']})
+        if not dukcapil.get('source_available',True):
+            status,reason='technical',dukcapil['message']
+            retry={'stage':'verify','label':'Tunggu adapter identitas berwenang','reason':reason}
         result = {'id': 'VRF-'+uuid.uuid4().hex[:10].upper(), 'session_id': session.id,
                   'name': identity.get('name') or 'Pemohon', 'nik_masked': '•••• •••• •••• '+identity['nik'][-4:],
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
-                  'rules': rules, 'retry': retry, 'identity_verified': False, 'dukcapil': dukcapil, 'inference': 'real',
+                  'rules': rules, 'retry': retry, 'identity_verified': bool(dukcapil['identity_verified']), 'dukcapil': dukcapil, 'inference': 'real',
                   'decision_policy': 'kyc-core-v1-ai-image-diagnostic'}
         self.repository.save_result(result)
         self.repository.audit('Verifikasi selesai', f'{status}: {reason}', result['id'])

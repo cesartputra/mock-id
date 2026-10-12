@@ -2982,3 +2982,321 @@ dialog::backdrop {
   font-size: 12px;
   line-height: 1.6;
 }
+/* Persistent workflow, capacity and authenticated results. */
+.application-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.application-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  gap: 16px;
+  border: 1px solid var(--line, #dde3da);
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  font: inherit;
+  min-height: 64px;
+}
+.application-row small {
+  display: block;
+  margin-top: 8px;
+  color: #718074;
+}
+.application-panel .panel-head {
+  padding: 0 0 16px;
+  flex-wrap: wrap;
+}
+.application-panel .buttons {
+  flex-wrap: wrap;
+  margin-top: 20px;
+  gap: 12px;
+}
+.routing-score {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 24px 0;
+}
+.routing-score strong {
+  font-size: 40px;
+  color: #1d5948;
+}
+.routing-score strong small {
+  font-size: 16px;
+}
+.routing-score span {
+  font-size: 14px;
+  color: #68796c;
+}
+.capacity-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.capacity-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f6f7f3;
+  border: 1px solid #e2e5de;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 13px;
+}
+.capacity-day.available {
+  border-color: #bdd4b5;
+  background: #f0f7ed;
+}
+.capacity-day input {
+  align-self: flex-start;
+  min-width: 22px;
+  min-height: 22px;
+}
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+.evidence-grid figure {
+  margin: 0;
+}
+.evidence-grid img {
+  width: 100%;
+  max-height: 250px;
+  object-fit: contain;
+  background: #f2f4ef;
+  border-radius: 10px;
+}
+.evidence-grid figcaption {
+  font-size: 12px;
+  margin: 8px 0;
+}
+.evidence-grid small {
+  display: block;
+}
+.demo-report-marker {
+  border: 2px solid #b4262d;
+  padding: 20px;
+  color: #b4262d;
+  font-weight: 700;
+  font-size: 20px;
+  background: #fff5f5;
+  margin-bottom: 20px;
+}
+.report-json {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f7f8f4;
+  padding: 20px;
+  border-radius: 8px;
+  max-height: 55vh;
+  overflow: auto;
+}
+textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 12px;
+  border: 1px solid #dce1d8;
+  border-radius: 8px;
+  font: inherit;
+}
+.application-panel form {
+  margin-top: 24px;
+}
+.application-panel form .scenario {
+  margin: 12px 0;
+}
+.application-panel .badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .application-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .application-panel .buttons .button {
+    width: 100%;
+    min-height: 48px;
+  }
+  .routing-score {
+    gap: 16px;
+  }
+  .evidence-grid {
+    grid-template-columns: 1fr;
+  }
+  .public-header nav {
+    flex-wrap: wrap;
+  }
+  .capacity-days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.synthetic-facility {
+  border: 1px solid #dce2d8;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.synthetic-facility h3 {
+  margin: 0 0 12px;
+}
+.synthetic-facility .registration-summary {
+  margin: 0;
+}
+
+/* Synthetic iDeb report: readable sections and horizontally scrollable history. */
+.slik-report {
+  color: #24312b;
+}
+.slik-report-header {
+  padding: 18px 0;
+  border-bottom: 3px solid var(--primary, #b5252d);
+}
+.slik-report section {
+  margin-top: 26px;
+}
+.slik-report h3 {
+  color: #b5252d;
+  border-bottom: 1px solid #e1c2c5;
+  padding-bottom: 10px;
+}
+.slik-report h4 {
+  margin: 22px 0 12px;
+}
+.slik-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #e4e8e3;
+  border: 1px solid #e4e8e3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.slik-fields div {
+  padding: 12px;
+  background: #f8f9f6;
+  min-width: 0;
+}
+.slik-fields dt {
+  font-size: 12px;
+  color: #6a756e;
+  margin-bottom: 5px;
+}
+.slik-fields dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.slik-totals dd {
+  font-size: 20px;
+  font-weight: 700;
+}
+.slik-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid #e4e8e3;
+  border-radius: 8px;
+}
+.slik-history {
+  min-width: 850px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.slik-history th,
+.slik-history td {
+  padding: 10px;
+  text-align: center;
+  border: 1px solid #e4e8e3;
+  white-space: nowrap;
+}
+.slik-history th {
+  background: #f4f5f0;
+}
+.slik-history .quality-attention {
+  color: #985f13;
+  background: #fff1da;
+  font-weight: 700;
+}
+.slik-report footer {
+  padding: 22px 0;
+  font-weight: 700;
+  color: #b5252d;
+}
+.slik-report-actions {
+  margin-top: 16px;
+}
+@media (max-width: 600px) {
+  .slik-fields {
+    grid-template-columns: 1fr;
+  }
+  .slik-totals dd {
+    font-size: 18px;
+  }
+}
+@media print {
+  body > :not(#modal) {
+    display: none !important;
+  }
+  #modal {
+    position: static;
+    display: block;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    border: none;
+    overflow: visible;
+    padding: 0;
+  }
+  #modal::backdrop {
+    display: none;
+  }
+  #modal button,
+  .slik-report-actions,
+  #modal > header {
+    display: none !important;
+  }
+  .slik-report {
+    font-size: 10pt;
+  }
+  .slik-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .slik-fields div {
+    break-inside: avoid;
+  }
+  .slik-history {
+    min-width: 0;
+    font-size: 7pt;
+  }
+  .slik-history th,
+  .slik-history td {
+    padding: 4px;
+  }
+  .demo-report-marker {
+    color: #b5252d;
+    font-weight: 700;
+    border: 2px solid #b5252d;
+  }
+}
+
+@media print {
+  .modal-content {
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+  }
+  .modal-head {
+    display: none;
+  }
+  .slik-history {
+    width: 100%;
+  }
+}

@@ -88,6 +88,7 @@ class LiveCapture:
         self.cosine_min = 1.0
         self.spoof_strikes = 0
         self.rules = None
+        self.evidence_images = []
 
     def accept(self, digest, seq, now):
         if now-self.started > self.DEADLINE or self.sequence >= self.MAX_FRAMES:

@@ -16,6 +16,8 @@ const purposeLabels = {
 };
 const publicPages = new Set([
   "home",
+  "account",
+  "requests",
   "registration",
   "verify",
   "postkyc",
@@ -46,7 +48,9 @@ function publicRegistration() {
 }
 function draftDefaults(preview) {
   return {
-    name: preview ? "PEMOHON DEMO" : flow?.ocr?.fields?.name || "",
+    name: preview
+      ? "PEMOHON DEMO"
+      : selectedApplication?.name || flow?.ocr?.fields?.name || "",
     email: preview ? "pemohon@example.com" : "",
     phone: preview ? "081234567890" : "",
     address: preview
@@ -59,7 +63,9 @@ function canContinueAfterKyc() {
   return (
     applicationContext.preview ||
     applicationContext.debtorType !== "individual" ||
-    flow?.result?.status === "pass"
+    approvedStates.includes(
+      selectedApplication?.state || flow?.result?.application?.state,
+    )
   );
 }
 function postKycView() {
@@ -77,7 +83,7 @@ function postKycView() {
 }
 function registrationFields(draft) {
   const kind = applicationContext.debtorType;
-  return `<form id="registration-data-form"><div class="form-grid"><div class="field wide"><label for="registration-name">${kind === "business" ? "Nama badan usaha" : "Nama pemohon"} <em>*</em></label><input id="registration-name" name="name" value="${esc(draft.name)}" required minlength="2" maxlength="100" autocomplete="name"></div><div class="field"><label for="registration-email">Email tujuan <em>*</em></label><input id="registration-email" name="email" value="${esc(draft.email)}" type="email" maxlength="120" required autocomplete="email"></div><div class="field"><label for="registration-phone">Nomor ponsel <em>*</em></label><input id="registration-phone" name="phone" value="${esc(draft.phone)}" type="tel" inputmode="tel" pattern="\\+?[0-9]{9,16}" required autocomplete="tel" placeholder="08xxxxxxxxxx"></div><div class="field wide"><label for="registration-address">Alamat pemohon <em>*</em></label><input id="registration-address" name="address" value="${esc(draft.address)}" minlength="5" maxlength="250" required autocomplete="street-address"></div><div class="field wide"><label for="registration-purpose">Tujuan permohonan <em>*</em></label><select id="registration-purpose" name="purpose">${Object.entries(
+  return `<form id="registration-data-form"><div class="form-grid"><div class="field wide"><label for="registration-name">${kind === "business" ? "Nama badan usaha" : "Nama pemohon"} <em>*</em></label><input id="registration-name" name="name" value="${esc(draft.name)}" required minlength="2" maxlength="100" autocomplete="name" ${kind === "individual" && !applicationContext.preview ? "readonly" : ""}></div><div class="field"><label for="registration-email">Email tujuan <em>*</em></label><input id="registration-email" name="email" value="${esc(draft.email)}" type="email" maxlength="120" required autocomplete="email"></div><div class="field"><label for="registration-phone">Nomor ponsel <em>*</em></label><input id="registration-phone" name="phone" value="${esc(draft.phone)}" type="tel" inputmode="tel" pattern="\\+?[0-9]{9,16}" required autocomplete="tel" placeholder="08xxxxxxxxxx"></div><div class="field wide"><label for="registration-address">Alamat pemohon <em>*</em></label><input id="registration-address" name="address" value="${esc(draft.address)}" minlength="5" maxlength="250" required autocomplete="street-address"></div><div class="field wide"><label for="registration-purpose">Tujuan permohonan <em>*</em></label><select id="registration-purpose" name="purpose">${Object.entries(
     purposeLabels,
   )
     .map(
@@ -126,7 +132,7 @@ document.addEventListener("click", async (event) => {
       registrationStep = 0;
       await goPublic("postkyc");
     } else if (button.hasAttribute("data-continue-registration")) {
-      if (flow?.result?.status !== "pass") return;
+      if (!approvedStates.includes(flow?.result?.application?.state)) return;
       applicationContext = { debtorType: "individual", preview: false };
       registrationDraft = draftDefaults(false);
       registrationStep = 0;
@@ -177,6 +183,7 @@ document.addEventListener("submit", async (event) => {
   const data = Object.fromEntries(new FormData(form));
   try {
     if (form.id === "debtor-form") {
+      selectedApplication = null;
       applicationContext = { debtorType: data.debtorType, preview: false };
       registrationStep = 0;
       registrationDraft = null;
@@ -215,7 +222,13 @@ document.addEventListener("submit", async (event) => {
             debtor_type: applicationContext.debtorType,
             preview: applicationContext.preview,
             ...(realIndividual
-              ? { session_id: flow.session.id, verification_id: flow.result.id }
+              ? {
+                  application_id:
+                    selectedApplication?.id || flow?.session?.application_id,
+                  session_id: flow?.session?.id,
+                  verification_id:
+                    selectedApplication?.verification_id || flow?.result?.id,
+                }
               : {}),
           }),
         });

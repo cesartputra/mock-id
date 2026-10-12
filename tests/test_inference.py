@@ -81,3 +81,45 @@ def test_cpu_failure_is_not_hidden(monkeypatch):
     def unavailable(*_args, **_kwargs): raise RuntimeError('model broken')
     monkeypatch.setattr(inference.ort, 'InferenceSession', unavailable)
     with pytest.raises(RuntimeError, match='model broken'): inference.PadSession('model.onnx', None)
+
+
+def test_linux_cuda_selection_and_no_cuda_on_mac(monkeypatch):
+    monkeypatch.setenv('MOCK_ID_PAD_PROVIDER','cuda')
+    monkeypatch.setattr(inference.platform,'system',lambda:'Linux')
+    monkeypatch.setattr(inference.platform,'machine',lambda:'x86_64')
+    monkeypatch.setattr(inference.ort,'get_available_providers',lambda:['CUDAExecutionProvider','CPUExecutionProvider'])
+    assert inference.pad_policy()['selected']=='cuda'
+    monkeypatch.setenv('MOCK_ID_PAD_PROVIDER','auto')
+    assert inference.pad_policy()['runtime']=='ONNX / CUDA + CPU'
+    monkeypatch.setattr(inference.platform,'system',lambda:'Darwin')
+    monkeypatch.setattr(inference.platform,'machine',lambda:'arm64')
+    assert inference.pad_policy()['selected']=='cpu'
+
+
+def test_cuda_constructor_failure_is_reported_as_cpu(monkeypatch):
+    monkeypatch.setenv('MOCK_ID_PAD_PROVIDER','cuda')
+    monkeypatch.setattr(inference.platform,'system',lambda:'Linux')
+    monkeypatch.setattr(inference.ort,'get_available_providers',lambda:['CUDAExecutionProvider','CPUExecutionProvider'])
+    calls=[]
+    class CPU:
+        def get_providers(self):return ['CPUExecutionProvider']
+        def run(self,*_):return [np.array([1.])]
+    def factory(*_args,providers,**_kwargs):
+        calls.append(providers)
+        if isinstance(providers[0],tuple):raise RuntimeError('No CUDA driver fixture')
+        return CPU()
+    monkeypatch.setattr(inference.ort,'InferenceSession',factory)
+    session=inference.PadSession('fixture.onnx',None)
+    assert session.status['selected']=='cpu' and 'CUDA' in session.status['fallback_reason']
+    assert calls[0][0][0]=='CUDAExecutionProvider'
+
+
+@pytest.mark.skipif('CUDAExecutionProvider' not in inference.ort.get_available_providers(),reason='NVIDIA CUDA runtime/hardware tidak tersedia pada Mac ini.')
+def test_native_cuda_cpu_parity_when_available(monkeypatch,face_image):
+    from app.services.antispoof import AntiSpoofService
+    from app.services.face import FaceService
+    face=FaceService().one(face_image)
+    monkeypatch.setenv('MOCK_ID_PAD_PROVIDER','cpu');cpu=AntiSpoofService().score(face_image,face)
+    monkeypatch.setenv('MOCK_ID_PAD_PROVIDER','cuda');gpu=AntiSpoofService().score(face_image,face)
+    assert gpu['runtime_details']['selected']=='cuda'
+    assert gpu['live_probability']==pytest.approx(cpu['live_probability'],abs=.001)

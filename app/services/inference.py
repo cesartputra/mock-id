@@ -14,16 +14,22 @@ COREML_OPTIONS = {'ModelFormat': 'NeuralNetwork', 'MLComputeUnits': 'ALL',
 
 def pad_policy():
     requested = os.getenv('MOCK_ID_PAD_PROVIDER', 'auto').lower()
-    if requested not in {'auto', 'coreml', 'cpu'}:
-        raise ValueError('MOCK_ID_PAD_PROVIDER harus auto, coreml, atau cpu.')
-    compatible = platform.system() == 'Darwin' and platform.machine() == 'arm64'
-    available = 'CoreMLExecutionProvider' in ort.get_available_providers()
-    selected = 'coreml' if requested != 'cpu' and compatible and available else 'cpu'
+    if requested not in {'auto', 'coreml', 'cpu', 'cuda'}:
+        raise ValueError('MOCK_ID_PAD_PROVIDER harus auto, coreml, cuda, atau cpu.')
+    available = ort.get_available_providers()
+    mac = platform.system() == 'Darwin' and platform.machine() == 'arm64'
+    linux = platform.system() == 'Linux'
+    selected = 'cpu'
+    if requested in ['auto','coreml'] and mac and 'CoreMLExecutionProvider' in available: selected = 'coreml'
+    elif requested in ['auto','cuda'] and linux and 'CUDAExecutionProvider' in available: selected = 'cuda'
     reason = None
-    if requested != 'cpu' and selected == 'cpu':
-        reason = 'CoreML membutuhkan Apple Silicon dan ONNX Runtime dengan CoreML EP.'
+    if selected == 'cpu' and requested in ['coreml','cuda']:
+        reason = 'Provider/perangkat yang diminta tidak tersedia; PAD memakai CPU.'
+    elif selected == 'cpu' and requested == 'auto':
+        reason = 'Akselerator CoreML/CUDA kompatibel tidak tersedia; PAD memakai CPU.'
     return {'requested': requested, 'selected': selected, 'fallback_reason': reason,
-            'runtime': 'ONNX / CoreML + CPU' if selected == 'coreml' else 'ONNX / CPU'}
+            'runtime': {'cpu':'ONNX / CPU','coreml':'ONNX / CoreML + CPU','cuda':'ONNX / CUDA + CPU'}[selected]}
+
 
 
 def coreml_options(path):
@@ -41,14 +47,14 @@ class PadSession:
     def __init__(self, path, options):
         self.path, self.options = str(path), options
         self.status = {**pad_policy(), 'loaded': False, 'providers': []}
-        if self.status['selected'] == 'coreml':
+        if self.status['selected'] in ['coreml','cuda']:
             try:
-                self.session = ort.InferenceSession(self.path, options,
-                    providers=[('CoreMLExecutionProvider', coreml_options(path)), 'CPUExecutionProvider'])
-                if 'CoreMLExecutionProvider' not in self.session.get_providers():
-                    raise RuntimeError('CoreML provider tidak terdaftar pada session.')
+                provider = 'CoreMLExecutionProvider' if self.status['selected']=='coreml' else 'CUDAExecutionProvider'
+                config = coreml_options(path) if self.status['selected']=='coreml' else {'device_id':int(os.getenv('MOCK_ID_CUDA_DEVICE','0'))}
+                self.session = ort.InferenceSession(self.path, options, providers=[(provider,config),'CPUExecutionProvider'])
+                if provider not in self.session.get_providers(): raise RuntimeError('Provider tidak terdaftar pada session.')
             except Exception:
-                self._cpu('Inisialisasi CoreML gagal; PAD berjalan melalui CPU.')
+                self._cpu('Inisialisasi '+self.status['selected'].upper()+' gagal; PAD berjalan melalui CPU.')
         else:
             self.session = ort.InferenceSession(self.path, options, providers=['CPUExecutionProvider'])
         self.status.update(loaded=True, providers=self.session.get_providers())
@@ -72,7 +78,7 @@ class PadSession:
         try:
             return self.session.run(outputs, inputs)
         except Exception:
-            if self.status['selected'] != 'coreml':
+            if self.status['selected'] == 'cpu':
                 raise
-            self._cpu('Eksekusi CoreML gagal; PAD diperiksa ulang melalui CPU.')
+            self._cpu('Eksekusi '+self.status['selected'].upper()+' gagal; PAD diperiksa ulang melalui CPU.')
             return self.session.run(outputs, inputs)

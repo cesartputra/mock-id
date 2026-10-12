@@ -129,19 +129,15 @@ def test_swagger_header_scheme(client):
     assert spec['components']['securitySchemes']['APIKeyHeader']['name']=='X-Local-Client'
 
 
-def test_manual_schedule_and_review_persist(client):
+def test_legacy_review_and_schedule_cannot_bypass_case_and_evidence(client):
     from datetime import datetime,timedelta,timezone
     repo=client.app.state.repository
     fixture={'id':'TEST-MANUAL','created':datetime.now(timezone.utc).isoformat(),'status':'manual','identity_verified':False}
     repo.save_result(fixture)
     at=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
-    response=client.post('/api/records/TEST-MANUAL/schedule',json={'at':at})
-    assert response.status_code==200 and response.json()['status']=='scheduled'
-    response=client.post('/api/records/TEST-MANUAL/review',json={'decision':'approved','note':'Catatan unit test'})
-    assert response.status_code==200 and response.json()['status']=='approved'
-    assert response.json()['identity_verified'] is False
-    assert client.post('/api/records/TEST-MANUAL/review',json={'decision':'rejected','note':'Ganti keputusan'}).status_code==409
-    assert repo.result('TEST-MANUAL')['note']=='Catatan unit test'
+    assert client.post('/api/records/TEST-MANUAL/schedule',json={'at':at}).status_code==409
+    assert client.post('/api/records/TEST-MANUAL/review',json={'decision':'approved','note':'Catatan unit test'}).status_code==409
+    assert repo.result('TEST-MANUAL')['status']=='manual'
 
 
 def test_settings_persist_and_audit(client):

@@ -56,7 +56,7 @@ def test_high_fake_score_preserves_valid_kyc_and_registration_handoff(client, po
     assert client.app.state.repository.result(result['id']) == result
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
     response = client.post('/api/registrations', json=body)
-    assert response.status_code == 200 and response.json()['kyc'] == 'local_checks_passed'
+    assert response.status_code == 409  # Raw pass has no persistent application approval.
     # Changing a diagnostic threshold cannot turn valid captures into attacks.
     client.app.state.repository.set_settings({**result['rules'], 'deepfake_risk': .01})
     assert run()['status'] == 'pass'

@@ -14,6 +14,8 @@
     <script src="/static/auto-capture.js" defer></script>
     <script src="/static/registration.js" defer></script>
     <script src="/static/api-response.js" defer></script>
+    <script src="/static/quality-gate.js" defer></script>
+    <script src="/static/workflow-ui.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body>
@@ -27,6 +29,8 @@
         ></a
       >
       <nav aria-label="Menu layanan">
+        <button data-page="requests">Permohonan saya</button
+        ><button data-page="account">Akses petugas</button>
         <button data-page="home">Beranda</button
         ><button data-public-info>Informasi</button
         ><button data-page="status">Status layanan</button
@@ -64,7 +68,10 @@
         </div>
         <div class="profile">
           <span class="avatar">AP</span>
-          <div>Admin Petugas<small>Operator lokal</small></div>
+          <div>
+            <span id="profile-login">Akun operator</span
+            ><small id="profile-role">Belum masuk</small>
+          </div>
           <span class="profile-dots">•••</span>
         </div>
       </div>

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "version": "REPLACE-WITH-REVIEWED-CALIBRATION-VERSION",
+  "approved_by": "",
+  "evaluation_report": "",
+  "points": {"face": [[-1,0],[1,100]],"pad": [[0,0],[1,100]],"ocr": [[0,0],[1,100]]},
+  "weights": {"face": 0.45, "pad": 0.35, "ocr": 0.20}
+}

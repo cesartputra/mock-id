@@ -1,5 +1,38 @@
 # mock-id — verifikasi identitas lokal
 
+## Versi 3 — permohonan SLIK demo yang persisten
+
+Pembaruan ini ada di branch `development/slik-verification`. Alur lengkap: pemohon tanpa login → verifikasi model nyata → routing → pengambilan otomatis kuota hari ini dan pemeriksaan manual bila perlu → keputusan sah → hasil **DEMO — BUKAN INFORMASI DEBITUR RESMI**. Dukcapil, kewenangan resmi dan penerbitan resmi belum diintegrasikan; produksi ditahan sampai adapter/kalibrasi berwenang tersedia. Tidak ada deployment atau panggilan layanan resmi.
+
+```bash
+git fetch origin
+git switch development/slik-verification
+git pull --ff-only
+npm run setup
+npm start
+```
+
+Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. **Akses petugas** khusus helpdesk/admin yang dibuat melalui terminal; tidak ada credential bawaan:
+
+```bash
+npm run user:create -- --login helpdesk-demo --role helpdesk
+npm run user:create -- --login administrator-demo --role admin
+```
+
+- [Alur, kuota/jadwal, keputusan dan retensi](docs/WORKFLOW.md)
+- [Rumus skor demo dan kalibrasi produksi](docs/SCORING.md)
+- [Kontrak API dan integrasi widget/backend induk](docs/API.md)
+- [Mac M1, CoreML/CPU/CUDA, worker dan deployment adapters](docs/DEPLOYMENT.md)
+
+Sesi kamera sementara dipisahkan dari applications, evidence AES-GCM, cases, jadwal, auth, audit dan issuance di database. Persetujuan manual tetap dapat dilanjutkan setelah restart. Evidence penting yang diganti membatalkan keputusan lama. Backend pendaftaran menolak nama berbeda dari identitas yang diputuskan server. Header `X-Local-Client` kini hanya marker; cookie kapabilitas browser/bearer dan role/resource ownership tetap diwajibkan meskipun pemohon tidak login. Field raw model/diagnostik tersedia untuk operator berwenang; pemohon menerima status, instruksi dan skor routing berlabel heuristik.
+
+QualityGate browser memakai pemeriksaan lokal **heuristik demo** sampai model kualitas yang valid tersedia; interface ONNX Runtime Web/WASM disediakan tanpa model/kemampuan fiktif. Model/server recheck tetap wajib. Tier 2 worker PAD opsional tidak menerima NIK, nonce atau akses DB SLIK. CUDA dependency Linux terpisah dari Mac, dengan fallback runtime sebenarnya. PostgreSQL/private object storage adapters dan Redis owner registry tersedia; capture state masih memerlukan satu gateway/sticky routing, bukan full distributed proof restore.
+
+`npm test` mencakup routing 74,99/75/94/94,99/95/100, mandatory controls, persistence/restart, race slot terakhir, cancel/move/idempotency, holidays/hours, revocation, role/owner authorization, AEAD integrity/retention dan downstream retry. Model CPU asli tetap diuji; fixture routing/manual tidak membuktikan akurasi KYC. Tes fisik NVIDIA/servis deployment dilewatkan bila lingkungan tidak tersedia. Lihat [laporan pengujian](docs/TESTING.md).
+
+Bagian versi 2 di bawah adalah riwayat implementasi. **Endpoint review/schedule legacy kini ditutup**; gunakan applications/manual API. Hasil `pass` kamera sendiri atau status `approved` historis tidak lagi mengotorisasi handoff. Model/reference/licensing tetap sama; struktur MVC ditambah `migrations`, layanan auth/score/workflow/evidence/manual/slik, controller applications/auth dan views workflow/quality-gate.
+
+
 Proyek lokal dengan halaman pendaftaran bergaya iDebKu dan modul OCR KTP, pencocokan wajah 1:1, tantangan liveness, anti-spoofing, klasifikasi manipulasi gambar, serta KYC dengan foto pemohon memegang KTP. **Pemrosesan foto memakai model open source sungguhan secara lokal; Swin V2 memakai CoreML + CPU otomatis pada Mac Apple Silicon, model lain memakai CPU. Dukcapil dan pendaftaran layanan OJK memakai mock.**
 
 Backend FastAPI, frontend HTML/CSS/JavaScript, penyimpanan SQLite. Dashboard mulai kosong; tidak ada skenario hasil atau skor preset. Hasil yang belum dikerjakan tampil kosong, dan gangguan model tampil sebagai gangguan teknis.
@@ -67,7 +100,7 @@ app/
     ├── ocr.py                 # RapidOCR + parser identitas
     ├── face.py                # YuNet + SFace
     ├── landmarks.py           # PIPNet + MediaPipe Hand ONNX
-    ├── antispoof.py           # MiniFASNetV2
+    ├── antispoof.py           # Swin V2-B
     ├── deepfake.py             # ViT Real/Fake
     ├── card.py                # Kartu: geometri, fitur referensi, susunan teks
     ├── visibility.py          # FaceAttribNet dan umpan balik kamera

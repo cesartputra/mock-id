@@ -8,6 +8,8 @@ import secrets
 import statistics
 import time
 
+from app.services.antispoof import summarize_pad
+
 
 class GestureTracker:
     def __init__(self, challenges, turn_direction=None):
@@ -111,6 +113,7 @@ class LiveCapture:
         self.selfie_hash = None
         self.selfie_seq = None
         self.pad_min = 1.0
+        self.pad_samples = []
         self.pad_review_enabled = False
         self.cosine_min = 1.0
         self.spoof_strikes = 0
@@ -149,7 +152,23 @@ class LiveCapture:
         self.detection_missing_since = None
         self.detection_misses = 0
 
+    def record_pad(self, probability):
+        # Validate before mutating the session; samples are bounded by MAX_FRAMES.
+        summarize_pad([probability], (self.rules or {}).get('pad_probability', .8))
+        if len(self.pad_samples) >= self.MAX_FRAMES:
+            raise ValueError('Batas sampel PAD tercapai.')
+        self.pad_samples.append(probability)
+        self.pad_min = min(self.pad_min, probability)
+
     def result(self, feedback, metrics=None):
+        threshold = (self.rules or {}).get('pad_probability', .8)
+        summary = summarize_pad(self.pad_samples or [self.pad_min], threshold,
+                                demo=self.pad_review_enabled)
+        if self.pad_review_enabled and summary['passed'] and self.pad_samples:
+            # One low preview frame must not keep a historical warning alive.
+            feedback = {**feedback, 'warnings': [w for w in feedback.get('warnings', [])
+                                                 if w['code'] != 'pad_review'],
+                        'pad_review_required': False}
         result = {
             **self.gestures.public(),
             "done": False,
@@ -157,11 +176,10 @@ class LiveCapture:
             "metrics": metrics,
             "frames": self.sequence,
             "selfie_seq": self.selfie_seq,
-            "pad_probability": self.pad_min,
-            "pad_passed": self.pad_min
-            >= (self.rules or {}).get("pad_probability", 0.8),
-            "pad_review_required": self.pad_review_enabled
-            and self.pad_min < (self.rules or {}).get("pad_probability", 0.8),
+            "pad_probability": summary['score'],
+            "pad_summary": summary,
+            "pad_passed": summary['passed'],
+            "pad_review_required": self.pad_review_enabled and not summary['passed'],
             "continuity": [self.cosine_min],
             "rules": self.rules,
             "stream": True,

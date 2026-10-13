@@ -1,4 +1,7 @@
 """CVPR 2024 Swin V2-B face PAD, exported from the official checkpoint."""
+import math
+import statistics
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -25,6 +28,27 @@ def softmax(logits):
         raise ValueError('Output model tidak valid.')
     values = np.exp(values-values.max())
     return values / values.sum()
+
+
+def summarize_pad(probabilities, threshold, *, demo=False):
+    """Keep raw evidence; only the uncalibrated demo uses temporal median.
+
+    This is a routing statistic, not a calibrated identity probability. Strict
+    mode retains the worst sample. Fewer than three samples never smooth PAD.
+    """
+    values = list(probabilities)
+    if not values or any(type(v) not in (float, int) or not math.isfinite(v)
+                         or not 0 <= v <= 1 for v in values):
+        raise ValueError('Sampel PAD tidak valid.')
+    minimum = min(values)
+    median = statistics.median(values)
+    temporal = demo and len(values) >= 3
+    score = median if temporal else minimum
+    return {'score': score, 'minimum': minimum, 'median': median,
+            'sample_count': len(values), 'below_threshold_count': sum(v < threshold for v in values),
+            'threshold': threshold, 'aggregation': 'temporal_median_demo' if temporal else 'minimum',
+            'passed': score >= threshold, 'strict_passed': minimum >= threshold,
+            'calibrated': False, 'samples': values}
 
 
 def face_tensor(image, face):

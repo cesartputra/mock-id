@@ -489,7 +489,14 @@ function checkRows(record, { diagnostics = false } = {}) {
 function scoreCards(record, { diagnostics = false } = {}) {
   const scores = record.scores || {};
   const score = scores.face_cosine;
-  return `<div class="score-grid ${diagnostics ? "with-diagnostics" : ""}"><div class="score"><small>Kemiripan wajah KTP ↔ selfie</small><strong>${typeof score === "number" ? score.toFixed(3) : "Belum diperiksa"}</strong><p>Skor cosine; semakin tinggi semakin mirip. Bukan persentase kepastian identitas.</p>${typeof record.rules?.face_cosine === "number" ? `<small>Ambang saat pemeriksaan: ${record.rules.face_cosine.toFixed(3)}</small>` : ""}</div><div class="score"><small>Live probability</small><strong>${pct(scores.liveness)}</strong><p>Skor model anti-spoof, bukan jaminan bahwa seluruh serangan terdeteksi.</p></div>${diagnostics ? `<div class="score"><small>Skor classifier gambar AI (diagnostik)</small><strong>${pct(scores.deepfake)}</strong><p>Skor kelas AI-generated dari model umum. Belum dikalibrasi untuk KYC; tidak menentukan kelulusan pada kebijakan terbaru.</p></div>` : ""}</div>`;
+  const pad = record.checks?.find((c) => c.name === "Anti-spoof / PAD")?.detail;
+  const temporalDemo = pad?.scope === "liveness_recording_and_selfie";
+  const imageDiagnostic = record.checks?.find(
+    (c) => c.name === "Classifier gambar AI (diagnostik)",
+  );
+  const fullImage =
+    imageDiagnostic?.detail?.input_scope === "full_camera_image";
+  return `<div class="score-grid ${diagnostics ? "with-diagnostics" : ""}"><div class="score"><small>Kemiripan wajah KTP ↔ selfie</small><strong>${typeof score === "number" ? score.toFixed(3) : "Belum diperiksa"}</strong><p>Skor cosine; semakin tinggi semakin mirip. Bukan persentase kepastian identitas.</p>${typeof record.rules?.face_cosine === "number" ? `<small>Ambang saat pemeriksaan: ${record.rules.face_cosine.toFixed(3)}</small>` : ""}</div><div class="score"><small>Skor PAD ${temporalDemo ? "rekaman wajah" : "seluruh capture"}</small><strong>${pct(scores.liveness)}</strong><p>${temporalDemo ? "Ringkasan temporal rekaman dan selfie pada demo. Foto memegang KTP dinilai terpisah." : "Skor minimum model anti-spoof pada capture yang diperiksa."} Bukan persentase kepastian identitas.</p>${diagnostics && typeof pad?.minimum_live_probability === "number" ? `<small>Minimum mentah seluruh capture: ${pct(pad.minimum_live_probability)}</small>` : ""}</div>${diagnostics ? `<div class="score"><small>Skor classifier gambar AI (diagnostik)</small><strong>${pct(scores.deepfake)}</strong><p>Skor kelas AI-generated dari model umum pada ${fullImage ? "gambar kamera utuh" : "input versi lama"}. Belum dikalibrasi untuk KYC; tidak menentukan kelulusan. Skor tinggi bukan bukti manipulasi.</p></div>` : ""}</div>`;
 }
 function resultView() {
   const r = flow.result;
@@ -568,7 +575,7 @@ function modulesView() {
       "",
     )}${workspace.health.last_error ? `<p class="text-error">${esc(workspace.health.last_error)}</p>` : ""}<p class="state-note">Jalankan <code>npm run setup</code> pertama kali, kemudian <code>npm start</code>. Checksum bobot diperiksa sebelum inference.</p></section><section class="panel config-panel"><h2>Ambang pemeriksaan demo</h2><button class="button" data-capacity-config>Kapasitas, jadwal & retensi</button><p>Nilai awal adalah ambang eksperimen. Ambang cosine bukan persentase kecocokan identitas. Ambang classifier gambar hanya referensi diagnostik, tidak menggagalkan KYC.</p><form id="settings-form"><div class="settings-grid">${[
     ["face_cosine", "Minimum cosine ArcFace R50", 0.1, 0.9, 0.001],
-    ["pad_probability", "Minimum live probability", 0.5, 0.99, 0.01],
+    ["pad_probability", "Ambang skor PAD", 0.5, 0.99, 0.01],
     [
       "deepfake_risk",
       "Ambang referensi classifier (diagnostik)",

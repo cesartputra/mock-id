@@ -46,7 +46,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v4-arcface-r50-auto50"
+        self.version = "demo-routing-v5-arcface-r50-temporal-pad-auto50"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS

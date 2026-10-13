@@ -48,10 +48,10 @@ def test_high_fake_score_preserves_valid_kyc_and_registration_handoff(client, po
     result = run()
     assert result['status'] == 'pass'
     assert result['scores']['deepfake'] == .997  # Real raw output not suppressed/changed.
-    diagnostic = next(c for c in result['checks'] if c.get('effect') == 'advisory')
+    diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
     assert diagnostic['status'] == 'informational' and not diagnostic['calibrated']
     assert not any(c['status'] == 'failed' for c in result['checks'])
-    assert result['decision_policy'] == 'kyc-core-v1-ai-image-diagnostic'
+    assert result['decision_policy'] == 'kyc-core-v2-temporal-pad-full-image-diagnostic'
     assert not result['identity_verified']
     assert client.app.state.repository.result(result['id']) == result
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
@@ -84,7 +84,7 @@ def test_advisory_classifier_exception_does_not_invalidate_core_checks(policy_ca
     state['diagnostic_error'] = True
     result = run()
     assert result['status'] == 'pass' and 'deepfake' not in result['scores']
-    diagnostic = next(c for c in result['checks'] if c.get('effect') == 'advisory')
+    diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
     assert diagnostic['status'] == 'unavailable'
 
 
@@ -128,8 +128,10 @@ def test_uncertain_pad_takes_today_quota_but_never_issues_without_review(client,
     assert client.get('/api/applications/'+routed['id']+'/slik.pdf').status_code==409
 
 
-def test_holding_pad_is_also_required_before_automatic_approval(client, policy_case):
+@pytest.mark.parametrize('strict', [False, True])
+def test_holding_pad_diagnostic_in_demo_and_required_in_strict_mode(client, policy_case, strict):
     state, run, _session = policy_case
+    client.app.state.verifier.pad_review_enabled = not strict
     calls=[]
     def score(image,face):
         calls.append(image)
@@ -137,8 +139,14 @@ def test_holding_pad_is_also_required_before_automatic_approval(client, policy_c
     client.app.state.verifier.pad.score = score
     result = run()
     assert len(calls)==2
-    assert result['status']=='manual' and result['pad_review_required']
-    assert result['scores']['liveness']==.01
+    assert result['status'] == ('attack' if strict else 'pass')
+    assert result['scores']['liveness'] == (.01 if strict else state['pad'])
+    pad = next(c for c in result['checks'] if c['name'] == 'Anti-spoof / PAD')
+    assert pad['detail']['minimum_live_probability'] == .01
+    assert pad['detail']['holding']['live_probability'] == .01
+    if not strict:
+        held = next(c for c in result['checks'] if c['name'] == 'PAD foto memegang KTP (diagnostik)')
+        assert held['effect'] == 'advisory' and held['status'] == 'informational'
 
 
 def test_production_service_keeps_strict_pad_policy(client, monkeypatch):

@@ -13,7 +13,7 @@ from app.model.repository import utcnow
 from app.services.imaging import CaptureError, card_region, quality
 from app.services.ocr import OCRService
 from app.services.face import FaceService, FACE_MODEL_ID, FACE_MODEL
-from app.services.antispoof import AntiSpoofService, create_pad_service, PAD_FILE, PAD_MODEL
+from app.services.antispoof import AntiSpoofService, create_pad_service, PAD_FILE, PAD_MODEL, summarize_pad
 from app.services.deepfake import DeepfakeService
 from app.services.landmarks import LandmarkService
 from app.services.dukcapil import DukcapilService
@@ -44,8 +44,8 @@ class VerificationService:
         self.last_error = None
         self.assets_verified = False
         self.subject_key = secrets.token_bytes(32)
-        # An uncalibrated PAD signal in the local demo requires human review,
-        # never automatic approval. Production keeps strict capture rejection.
+        # Uncalibrated demo uses temporal evidence; strict profiles keep minimum PAD.
+        # Final demo approval still follows the explicit 50-point routing policy.
         self.pad_review_enabled = (
             os.getenv("MOCK_ID_MODE", "demo") == "demo"
             and not ScoreCalibrator().calibrated
@@ -100,7 +100,10 @@ class VerificationService:
                     pad["live_probability"]
                     < self.repository.settings()["pad_probability"]
                 ):
-                    if self.pad_review_enabled:
+                    if self.pad_review_enabled and holding:
+                        # Held-card PAD is advisory in the demo, not liveness evidence.
+                        result["pad_scope"] = "holding_diagnostic"
+                    elif self.pad_review_enabled:
                         result["pad_review_required"] = True
                         result["warnings"].append(
                             {
@@ -207,7 +210,7 @@ class VerificationService:
                 result.update(done=True, passed=False, reason='Wajah pada rekaman berubah atau tidak konsisten. Rekam ulang dengan satu pemohon.')
                 return result
             capture.cosine_min = min(capture.cosine_min, cosine)
-            capture.pad_min = min(capture.pad_min, feedback['pad']['live_probability'])
+            capture.record_pad(feedback['pad']['live_probability'])
             before = len(capture.gestures.completed)
             capture.gestures.update(metrics)
             if len(capture.gestures.completed) > before:
@@ -231,7 +234,8 @@ class VerificationService:
                 face=self.face.one(frame)
                 continuity.append(self.face.compare(selfie,self_face,frame,face))
                 pad_samples.append(self.pad.score(frame,face))
-            minimum=min(s['live_probability'] for s in pad_samples)
+            summary = summarize_pad([s['live_probability'] for s in pad_samples], rules['pad_probability'], demo=self.pad_review_enabled)
+            minimum=summary['score']
             same_face = min(continuity) >= rules["face_cosine"]
             passed=live['passed'] and same_face and minimum>=rules['pad_probability']
             review_required = (
@@ -247,6 +251,7 @@ class VerificationService:
                 "reason": reason,
                 "live": live,
                 "pad_samples": pad_samples,
+                "pad_summary": summary,
                 "pad_probability": minimum,
                 "pad_review_required": review_required,
                 "pad_passed": minimum >= rules["pad_probability"],
@@ -330,52 +335,65 @@ class VerificationService:
                 if not hand['passed']:
                     raise CaptureError('Tangan yang memegang KTP belum terdeteksi. Tampilkan tangan dan kartu secara utuh dalam foto.')
                 stage = "liveness"
+                selfie_pad = self.pad.score(selfie, self_face)
+                held_pad = self.pad.score(holding, holding_face)
+                pad_scores = [selfie_pad]
                 if proof.get("stream"):
                     live = proof['live']
                     continuity = proof['continuity']
-                    pad_scores = [
-                        self.pad.score(selfie, self_face),
-                        self.pad.score(holding, holding_face),
-                    ]
-                    pad_score = min(
-                        proof["pad_probability"],
-                        *(s["live_probability"] for s in pad_scores),
-                    )
+                    # Bound stream evidence already has a server-owned summary.
+                    # Do not reintroduce its raw minimum into the demo median.
+                    pad_score = min(proof['pad_probability'], selfie_pad['live_probability'])
+                    stream_min = proof.get('pad_summary', {}).get('minimum', proof['pad_probability'])
+                    raw_min = min(stream_min, selfie_pad['live_probability'], held_pad['live_probability'])
+                    aggregation = ('stream_median_and_selfie_demo' if proof.get('pad_summary', {}).get('aggregation') == 'temporal_median_demo' else 'stream_minimum_and_selfie_demo') if self.pad_review_enabled else 'minimum'
+                    stream_summary = proof.get('pad_summary')
                 else:
-                    live = self.landmarks.challenges(
-                        frames, manifest, session.challenges
-                    )
+                    live = self.landmarks.challenges(frames, manifest, session.challenges)
                     continuity = []
-                    pad_scores = [
-                        self.pad.score(selfie, self_face),
-                        self.pad.score(holding, holding_face),
-                    ]
                     for challenge in session.challenges:
                         frame = next(f for f, m in zip(frames, manifest) if m['challenge'] == challenge)
                         frame_face = self.face.one(frame)
                         continuity.append(self.face.compare(selfie, self_face, frame, frame_face))
                         pad_scores.append(self.pad.score(frame, frame_face))
-                    pad_score = min(s['live_probability'] for s in pad_scores)
+                    summary = summarize_pad([s['live_probability'] for s in pad_scores],
+                                            rules['pad_probability'], demo=self.pad_review_enabled)
+                    pad_score = summary['score']
+                    raw_min = min(summary['minimum'], held_pad['live_probability'])
+                    aggregation = summary['aggregation']
+                    stream_summary = summary
+                if not self.pad_review_enabled:
+                    # Production/calibrated policy still includes held-photo PAD
+                    # and every historical minimum; no smoothing bypass.
+                    pad_score = min(pad_score, raw_min)
+                pad_detail = {'samples': pad_scores, 'recording': stream_summary,
+                              'score': pad_score, 'minimum_live_probability': raw_min,
+                              'holding': held_pad, 'aggregation': aggregation,
+                              'scope': 'liveness_recording_and_selfie' if self.pad_review_enabled else 'all_captures',
+                              'threshold': rules['pad_probability']}
+                if self.pad_review_enabled:
+                    checks.append({'name': 'PAD foto memegang KTP (diagnostik)', 'status': 'informational',
+                                   'effect': 'advisory', 'mode': 'real', 'stage': 'holding',
+                                   'detail': {'sample': held_pad, 'message': 'Skor foto memegang KTP dipisahkan dari rekaman liveness pada demo. Tidak membuktikan keaslian fisik kartu.'}})
                 add('Tantangan liveness', live['passed'], live)
                 same_face = min(continuity) >= rules["face_cosine"]
                 add('Kontinuitas wajah capture', same_face, {'cosines': continuity, 'threshold': rules['face_cosine'], 'scope': 'Pencocokan frame; bukan attestation kamera atau deteksi seluruh injection.'})
                 scores['liveness'] = pad_score
-                add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], {'samples': pad_scores, 'minimum_live_probability': pad_score, 'threshold': rules['pad_probability']})
+                add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], pad_detail)
                 stage = "verify"
                 # This generic AI-image classifier is not calibrated for KYC
-                # face crops. Keep its real output for diagnostics, but never
+                # camera images. Keep its real output for diagnostics, but never
                 # let it declare an attack or invalidate otherwise valid KYC.
                 diagnostic = {'name': 'Classifier gambar AI (diagnostik)', 'mode': 'real',
                               'effect': 'advisory', 'stage': stage, 'calibrated': False}
                 try:
-                    _, aligned = self.face.feature(selfie, self_face)
-                    fake = self.deepfake.score(aligned)
-                    _, held_aligned = self.face.feature(holding, holding_face)
-                    held_fake = self.deepfake.score(held_aligned)
+                    fake = self.deepfake.score(selfie)
+                    held_fake = self.deepfake.score(holding)
                     fake_risk = max(fake['fake_probability'], held_fake['fake_probability'])
                     scores['deepfake'] = fake_risk
                     diagnostic.update(status='informational', detail={
                         'selfie': fake, 'kyc': held_fake, 'maximum_fake_probability': fake_risk,
+                        'input_scope': 'full_camera_image',
                         'reference_threshold': rules['deepfake_risk'],
                         'message': 'Classifier belum dikalibrasi untuk capture KYC. Skor disimpan sebagai diagnostik dan tidak menentukan kelulusan.'})
                 except Exception:
@@ -428,7 +446,7 @@ class VerificationService:
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
                   'rules': rules, 'retry': retry, 'identity_verified': bool(dukcapil['identity_verified']), 'dukcapil': dukcapil, 'inference': 'real',
-                  'decision_policy': 'kyc-core-v1-ai-image-diagnostic'}
+                  'decision_policy': 'kyc-core-v2-temporal-pad-full-image-diagnostic'}
         result["pad_review_required"] = bool(
             self.pad_review_enabled
             and status == "manual"

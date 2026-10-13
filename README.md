@@ -1,5 +1,18 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.1.4**, branch `fix/webcam-pad-scoring`: classifier AI memakai **gambar kamera utuh**, terpisah dari alignment ArcFace 112×112. Output tetap diagnostik, bukan bukti manipulasi atau dasar kelulusan. Swin V2 tetap memakai kontrak resmi crop wajah +20 px; tidak memilih crop dengan skor tertinggi. Pada **demo tanpa kalibrasi**, rekaman ≥3 sampel dirangkum dengan median temporal dan dibandingkan dengan PAD selfie; PAD foto memegang KTP dicatat terpisah sebagai diagnostik dan tidak menjatuhkan skor liveness. Semua sampel, minimum mentah, median dan jumlah sampel rendah tetap disimpan. Produksi/profil terkalibrasi tetap memakai minimum termasuk foto memegang KTP. Gerakan, kontinuitas wajah, kualitas, NIK, tangan dan binding bukti tetap wajib. Ringkasan demo belum merupakan probabilitas identitas atau kalibrasi anti-spoof.
+
+Untuk mencoba versi ini, hentikan server lama, lalu:
+
+```bash
+git fetch origin
+git switch fix/webcam-pad-scoring
+git pull --ff-only
+npm start
+```
+
+Buka `http://127.0.0.1:4173` dan reload browser. Mulai sesi/pengambilan liveness baru; hasil lama tidak dihitung ulang dan tidak memperoleh median dari sampel yang tidak tersimpan. Tidak ada bobot atau dependency baru. Evaluasi lebih lanjut dengan webcam asli dan serangan foto/layar tetap diperlukan; perubahan ini tidak menjamin semua false positive hilang. Lihat [diagnosis dan batas pengujian](docs/WEBCAM-PAD.md).
+
 Pembaruan **3.1.3**: `npm run user:list` menampilkan akun login yang sudah dibuat (username, peran, aktif/nonaktif). Gunakan `npm run user:list -- --role admin` atau `--role helpdesk` untuk memfilter. Password/hash tidak ditampilkan; sesi pemohon tanpa login tidak termasuk. Listing SQLite membuka database read-only dan tidak membuat database/kunci baru. Jalankan dari clone dan konfigurasi data yang sama dengan server.
 
 Pembaruan **3.1.2**: ganti password akun lokal dengan `npm run user:password -- --login admin-demo`. Terminal meminta password baru 10–200 karakter dua kali, tanpa argument password atau tampilan input. Akun/peran/bukti tetap dipertahankan, semua sesi akun lama dicabut, dan batas login akun tersebut direset. Tidak ada endpoint reset publik atau password bawaan. Setelah pull, jalankan perintah dari folder clone dan konfigurasi data yang sama dengan saat membuat akun, kemudian restart server dan login kembali.

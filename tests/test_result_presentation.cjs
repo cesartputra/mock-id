@@ -106,3 +106,43 @@ test("persistent applicant result displays demo Dukcapil pass with manual decisi
     /terverifikasi oleh prosedur berwenang|Unduh ulang PDF/,
   );
 });
+
+test("new webcam results explain recording score and full-frame diagnostics", () => {
+  const current = {
+    ...result,
+    scores: { face_cosine: 0.632, liveness: 0.97, deepfake: 0.00132 },
+    checks: [
+      {
+        name: "Anti-spoof / PAD",
+        status: "passed",
+        mode: "real",
+        detail: {
+          scope: "liveness_recording_and_selfie",
+          minimum_live_probability: 0.0001,
+        },
+      },
+      {
+        name: "Classifier gambar AI (diagnostik)",
+        effect: "advisory",
+        status: "informational",
+        detail: { input_scope: "full_camera_image" },
+      },
+    ],
+  };
+  const applicant = context.scoreCards(current);
+  assert.match(
+    applicant,
+    /Skor PAD rekaman wajah|Foto memegang KTP dinilai terpisah/,
+  );
+  assert.doesNotMatch(applicant, /Minimum mentah|Classifier|0.1%/);
+  const operator = context.scoreCards(current, { diagnostics: true });
+  assert.match(operator, /gambar kamera utuh|Minimum mentah seluruh capture/);
+  assert.match(operator, /bukan bukti manipulasi/);
+});
+
+test("historic results retain their original score and identify the legacy diagnostic input", () => {
+  const html = context.scoreCards(result, { diagnostics: true });
+  assert.match(html, /Skor PAD seluruh capture|input versi lama/);
+  assert.match(html, /99.7%/);
+  assert.doesNotMatch(html, /median|gambar kamera utuh/);
+});

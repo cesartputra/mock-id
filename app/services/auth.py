@@ -50,6 +50,51 @@ class AuthService:
             )
         return principal
 
+    def set_password(self, login, password):
+        """Local administrator CLI only; preserve identity/role and revoke sessions."""
+        normalized = login.strip().lower()
+        if not 3 <= len(normalized) <= 80 or not 10 <= len(password) <= 200:
+            raise HTTPException(
+                422, "Nama akun 3–80 karakter dan password baru 10–200 karakter."
+            )
+        salt = secrets.token_bytes(16)
+        digest = hashlib.scrypt(
+            password.encode(), salt=salt, n=16384, r=8, p=1, dklen=32
+        ).hex()
+        with self.repository.connect(write=True) as con:
+            row = con.execute(
+                "SELECT id,role,enabled,auth_kind FROM principals WHERE login=?",
+                (self.box.subject("account:" + normalized),),
+            ).fetchone()
+            if not row:
+                raise HTTPException(
+                    404,
+                    "Akun tidak ditemukan. Gunakan nama akun yang dibuat sebelumnya.",
+                )
+            if row["auth_kind"] == "browser" or not row["enabled"]:
+                raise HTTPException(
+                    403, "Password hanya dapat diganti untuk akun password yang aktif."
+                )
+            con.execute(
+                "UPDATE principals SET password_hash=? WHERE id=?",
+                (salt.hex() + ":" + digest, row["id"]),
+            )
+            con.execute("DELETE FROM auth_sessions WHERE principal_id=?", (row["id"],))
+            con.execute(
+                "DELETE FROM rate_limits WHERE bucket=?",
+                ("login:" + self.box.subject("login:" + normalized),),
+            )
+            con.execute(
+                "INSERT INTO audit(created,type,ref,detail) VALUES (?,?,?,?)",
+                (
+                    utcnow(),
+                    "Password akun diperbarui",
+                    row["id"],
+                    "Reset melalui administrator lokal; semua sesi akun dicabut.",
+                ),
+            )
+        return {"id": row["id"], "login": normalized, "role": row["role"]}
+
     def guest(self, token=None):
         """A browser capability owns demo requests, without an applicant login."""
         if token:
@@ -137,6 +182,22 @@ class AuthService:
             raise HTTPException(401, "Akun atau sandi tidak sesuai.")
         token = secrets.token_urlsafe(32)
         with self.repository.connect(write=True) as con:
+            # A reset may have happened while scrypt ran outside the transaction.
+            # Recheck under the write lock so old credentials cannot issue a new
+            # valid token after reset has revoked the previous sessions.
+            current = con.execute(
+                "SELECT password_hash,enabled,auth_kind FROM principals WHERE id=?",
+                (row["id"],),
+            ).fetchone()
+            if (
+                not current
+                or not current["enabled"]
+                or current["auth_kind"] == "browser"
+                or not secrets.compare_digest(current["password_hash"], packed)
+            ):
+                raise HTTPException(
+                    401, "Password telah berubah. Masuk dengan password terbaru."
+                )
             con.execute("DELETE FROM auth_sessions WHERE expires<?", (time.time(),))
             con.execute(
                 "INSERT INTO auth_sessions VALUES (?,?,?)",

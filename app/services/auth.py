@@ -250,3 +250,27 @@ def roles(request, *allowed):
             403, "Akun ini tidak memiliki kewenangan untuk tindakan tersebut."
         )
     return who
+
+
+def list_accounts(con, box, role=None):
+    """Account-directory SELECT only. Browser capabilities are not login accounts."""
+    if role is not None and role not in {
+        "admin",
+        "helpdesk",
+        "integration",
+        "applicant",
+    }:
+        raise ValueError("Peran tidak valid.")
+    query = "SELECT id,display_login,role,enabled FROM principals WHERE auth_kind != 'browser'"
+    rows = con.execute(
+        query + (" AND role=?" if role else ""), (role,) if role else ()
+    ).fetchall()
+    users = [
+        {
+            "login": box.open(row["display_login"], "login:" + row["id"]).decode(),
+            "role": row["role"],
+            "enabled": bool(row["enabled"]),
+        }
+        for row in rows
+    ]
+    return sorted(users, key=lambda user: (user["role"], user["login"]))

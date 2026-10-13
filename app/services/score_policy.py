@@ -21,6 +21,17 @@ REQUIRED_CONTROLS = {
     "approved_identity_procedure",
 }
 
+DEMO_SOFT_CONTROLS = {
+    "Wajah KTP ↔ selfie",
+    "Wajah selfie ↔ foto KYC",
+    "Kontinuitas wajah capture",
+    "Anti-spoof / PAD",
+}
+DEMO_HARD_CONTROLS = REQUIRED_CONTROLS - {
+    "document_face_liveness_pad",
+    "approved_identity_procedure",
+}
+
 WEIGHTS = {"face": 0.45, "pad": 0.35, "ocr": 0.20}
 
 
@@ -35,7 +46,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v3-arcface-r50"
+        self.version = "demo-routing-v4-arcface-r50-auto50"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -122,6 +133,10 @@ class ScorePolicy:
         self.calibrator = ScoreCalibrator()
         self.mode = os.getenv("MOCK_ID_MODE", "demo")
 
+    @property
+    def automatic_threshold(self):
+        return 50 if self.mode == "demo" and not self.calibrator.calibrated else 95
+
     def route(self, result, mandatory):
         score, components = self.calibrator.score(result.get("scores", {}))
         state = result["status"]
@@ -139,18 +154,16 @@ class ScorePolicy:
         ):
             decision = "TECHNICAL_PENDING"
             security = False
-        elif (
-            self.mode == "demo"
-            and not self.calibrator.calibrated
-            and state == "manual"
-            and result.get("pad_review_required") is True
-            and mandatory["session_nonce_proof"]
-            and mandatory["document_identity_complete"]
-        ):
-            # PAD uncertainty is not proof of fraud and must not become a
-            # score-only rejection. The failed mandatory PAD control remains
-            # false, so this path can never automatically approve/issue PDF.
-            decision = "MANUAL_PENDING"
+        elif self.mode == "demo" and not self.calibrator.calibrated:
+            # Demo-only policy requested by the owner: numeric model uncertainty
+            # may be accepted for a synthetic report. Raw failed controls remain
+            # false; missing proof/identity, mismatched NIK and attacks cannot be
+            # turned into a valid decision by a high score.
+            eligible = all(mandatory.values()) or (
+                result.get("demo_score_eligible") is True
+                and all(mandatory[key] for key in DEMO_HARD_CONTROLS)
+            )
+            decision = "AUTO_APPROVED" if score >= 50 and eligible else "MANUAL_PENDING"
             security = False
         elif score < 75:
             decision = "REJECTED"
@@ -174,5 +187,12 @@ class ScorePolicy:
             "mandatory": mandatory,
             "decision": decision,
             "security_review": security,
+            "automatic_threshold": self.automatic_threshold,
+            "demo_model_override": bool(
+                self.mode == "demo"
+                and not self.calibrator.calibrated
+                and decision == "AUTO_APPROVED"
+                and not all(mandatory.values())
+            ),
             "scope": "synthetic_only" if self.mode == "demo" else "production",
         }

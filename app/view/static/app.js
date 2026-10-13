@@ -31,6 +31,11 @@ const shapes = {
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[name] || shapes.verify}</svg>`;
 const names = {
+  account: "Akses petugas",
+  dashboard: "Ringkasan",
+  queue: "Antrean manual",
+  audit: "Jejak aktivitas",
+  modules: "Modul & konfigurasi",
   home: "Beranda",
   result: "Hasil verifikasi",
   registration: "Pendaftaran",
@@ -40,7 +45,7 @@ const names = {
   verify: "Verifikasi baru",
 };
 const statuses = {
-  pass: ["Kontrol lokal terpenuhi", "green"],
+  pass: ["Verifikasi demo passed", "green"],
   capture: ["Perbaikan capture", "orange"],
   technical: ["Gangguan teknis", "blue"],
   manual: ["Pemeriksaan manual", "orange"],
@@ -145,7 +150,15 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "X-Local-Client": "mock-id",
-      "X-Workspace-Mode": "public",
+      "X-Workspace-Mode": [
+        "account",
+        "dashboard",
+        "queue",
+        "audit",
+        "modules",
+      ].includes(page)
+        ? "operator"
+        : "public",
       ...(flow && path.startsWith(`/sessions/${flow.session.id}/`)
         ? { "X-Capture-Revision": String(flow.session.revision) }
         : {}),
@@ -161,7 +174,11 @@ async function api(path, options = {}) {
   return result;
 }
 async function reloadWorkspace() {
-  const mode = "public";
+  const mode = ["account", "dashboard", "queue", "audit", "modules"].includes(
+    page,
+  )
+    ? "operator"
+    : "public";
   if (accessMode && accessMode !== mode) {
     authEpoch++;
     stopCamera();
@@ -182,19 +199,40 @@ async function reloadWorkspace() {
   } catch (error) {
     if (error.status === 401) {
       principal = null;
+      workspace = {
+        records: [],
+        audit: [],
+        settings: {},
+        health: { ready: false, files: {} },
+      };
+      applicationRows = [];
+      selectedApplication = null;
+      operatorMetrics = null;
+      capacityCalendar = null;
       return;
     }
     throw error;
   }
-  applicationRows = [];
-  capacityCalendar = null;
-  workspace = {
-    records: [],
-    audit: [],
-    settings: {},
-    health: await api("/health"),
-  };
-  operatorMetrics = null;
+  if (["admin", "helpdesk"].includes(principal.role)) {
+    [applicationRows, capacityCalendar] = await Promise.all([
+      api("/applications"),
+      api("/manual/calendar"),
+    ]);
+  } else {
+    applicationRows = [];
+    capacityCalendar = null;
+  }
+  if (principal.role === "admin" || principal.role === "helpdesk")
+    workspace = await api("/workspace");
+  else
+    workspace = {
+      records: [],
+      audit: [],
+      settings: {},
+      health: await api("/health"),
+    };
+  operatorMetrics =
+    principal.role === "admin" ? await api("/operator/metrics") : null;
 }
 function badge(status) {
   const [text, color] = statuses[status] || [status, "gray"];
@@ -215,6 +253,9 @@ function updateNav() {
   for (const b of $$(".sidebar nav button[data-page]")) {
     const key = b.dataset.page;
     b.innerHTML = `${icon(key)}<span>${names[key]}</span>${key === "queue" ? `<span class="count">${workspace.records.filter((r) => ["manual", "scheduled"].includes(r.status)).length}</span>` : ""}`;
+    b.hidden =
+      principal?.role === "helpdesk" &&
+      ["dashboard", "audit", "modules"].includes(key);
     b.classList.toggle("active", key === page);
     if (key === page) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
@@ -225,6 +266,7 @@ function render() {
   document.body.classList.toggle("public-mode", publicPages.has(page));
   updateNav();
   const views = {
+    account: accountView,
     result: deliveryView,
     home: publicHome,
     registration: publicRegistration,
@@ -251,13 +293,17 @@ async function navigate(target) {
   page = names[target] ? target : "home";
   try {
     await reloadWorkspace();
-    if (!principal)
-      throw new Error("Sesi pemohon belum tersedia. Muat ulang halaman.");
+    if (!principal && page !== "account") {
+      page = "account";
+      history.replaceState(null, "", "#account");
+      render();
+      return;
+    }
     if (
-      principal?.role === "applicant" &&
+      !["admin", "helpdesk"].includes(principal?.role) &&
       ["dashboard", "queue", "audit", "modules"].includes(page)
     )
-      page = "home";
+      page = "account";
     if (
       principal?.role === "helpdesk" &&
       ["dashboard", "audit", "modules"].includes(page)
@@ -344,7 +390,7 @@ function dashboard() {
       : "—";
   return `${head("Ringkasan verifikasi", "Hasil berasal dari gambar dan frame yang diproses oleh model lokal.", `<button class="button primary" data-new>${icon("plus")} Verifikasi baru</button>`)}<div class="hero"><div class="hero-copy"><div class="hero-label"><span></span> OPEN SOURCE · REAL INFERENCE</div><h2>Capture nyata. Pemeriksaan lokal.</h2><p>OCR KTP, tantangan liveness, face matching, dan foto memegang KTP berjalan melalui model open source. Dukcapil memakai adapter mock.</p><div class="hero-bottom"><button class="button light" data-new>Mulai capture ${icon("arrow")}</button><small>Foto diproses di server lokal Anda</small></div></div><div class="hero-art" aria-hidden="true"><div class="orbit three"></div><div class="orbit two"></div><div class="orbit"></div><div class="shield">${icon("check")}</div><span class="floating-check">✓</span></div></div><div class="validation-note ${workspace.health.ready ? "" : "health-warn"}">${icon("info")} ${workspace.health.ready ? "Bobot model tersedia. Siap memproses gambar." : "Model belum lengkap. Jalankan npm run setup untuk mengunduh dependensi dan bobot."} <button class="button link" data-page="modules">Lihat modul →</button></div><div class="stats">${[
     ["Permohonan nyata", total, "file"],
-    ["Kontrol lokal terpenuhi", passed, "verify"],
+    ["Verifikasi demo passed", passed, "verify"],
     ["Antrean manual", manual, "queue"],
     ["Rata-rata inference", average === "—" ? "—" : average + " dtk", "clock"],
   ]
@@ -379,7 +425,7 @@ function dashboard() {
     )
     .join(
       "",
-    )}</div></section><section class="panel"><div class="panel-head"><h2>Status runtime</h2></div><div class="panel-body"><div class="runtime-status">${workspace.health.ready ? icon("check") : icon("info")}<strong>${workspace.health.ready ? "Model tersedia" : "Perlu setup model"}</strong></div><p class="step-description">${esc(padRuntimeLabel())}. ${esc(workspace.health.other_runtime || "Model lain menggunakan CPU")}. Foto tetap diproses lokal.</p><div class="result-control"><span>Penyimpanan</span><span class="badge green">SQLite lokal</span></div><div class="result-control"><span>Bobot model</span><span class="badge gray">SHA-256 pinned</span></div><div class="result-control"><span>Dukcapil</span><span class="badge orange">MOCK · belum terverifikasi</span></div><div class="callout" style="margin-top:20px">Hasil “kontrol lokal terpenuhi” tidak mengonfirmasi keaslian KTP atau identitas resmi. Foto memegang kartu menjadi bukti pendukung untuk ditinjau.</div></div></section></div><section class="panel table-panel"><div class="panel-head"><div><h2>Permohonan terbaru</h2><p>Dataset dimulai kosong; tidak ada permohonan fiktif yang dimuat otomatis.</p></div></div>${table(records.slice(0, 5))}</section>`;
+    )}</div></section><section class="panel"><div class="panel-head"><h2>Status runtime</h2></div><div class="panel-body"><div class="runtime-status">${workspace.health.ready ? icon("check") : icon("info")}<strong>${workspace.health.ready ? "Model tersedia" : "Perlu setup model"}</strong></div><p class="step-description">${esc(padRuntimeLabel())}. ${esc(workspace.health.other_runtime || "Model lain menggunakan CPU")}. Foto tetap diproses lokal.</p><div class="result-control"><span>Penyimpanan</span><span class="badge green">SQLite lokal</span></div><div class="result-control"><span>Bobot model</span><span class="badge gray">SHA-256 pinned</span></div><div class="result-control"><span>Dukcapil</span><span class="badge orange">${workspace.health.dukcapil === "mock" ? "MOCK · lolos simulasi" : "Adapter resmi belum dikonfigurasi"}</span></div><div class="callout" style="margin-top:20px">Ambang otomatis ${workspace.routing_policy?.mode === "demo" ? "demo" : ""}: ≥${workspace.routing_policy?.automatic_threshold ?? 95}/100. Skor routing bukan kepastian identitas. Kontrol model asli tetap tercatat; PDF demo berisi data keuangan sintetis.</div></div></section></div><section class="panel table-panel"><div class="panel-head"><div><h2>Permohonan terbaru</h2><p>Dataset dimulai kosong; tidak ada permohonan fiktif yang dimuat otomatis.</p></div></div>${table(records.slice(0, 5))}</section>`;
 }
 function verifyView() {
   if (!flow) return head("Menyiapkan sesi…", "Sesi dibuat oleh backend lokal.");
@@ -464,7 +510,7 @@ function resultView() {
         : ""
     }`;
   const titles = {
-    pass: "Kontrol lokal terpenuhi",
+    pass: "Verifikasi demo passed",
     capture: "Perbaiki capture Anda",
     technical: "Inference belum selesai",
     manual: "Perlu pemeriksaan petugas",

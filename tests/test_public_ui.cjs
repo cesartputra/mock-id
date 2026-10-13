@@ -4,14 +4,14 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const source = fs.readFileSync("app/view/static/app.js", "utf8");
 
-test("public shell has no staff entry, account form or login submission", () => {
+test("operator entry is restored while applicant registration remains available", () => {
   const html = fs.readFileSync("app/view/static/index.html", "utf8");
   const workflow = fs.readFileSync("app/view/static/workflow-ui.js", "utf8");
-  assert.doesNotMatch(
+  assert.match(
     html,
     /Akses petugas|data-page="account"|Workspace operator|data-page="dashboard"/,
   );
-  assert.doesNotMatch(
+  assert.match(
     workflow,
     /account-form|account-password|auth\/login|function accountView/,
   );
@@ -19,7 +19,7 @@ test("public shell has no staff entry, account form or login submission", () => 
   assert.match(html, /data-page="status"/);
 });
 
-test("old staff deep links redirect to public home and do not expose an anonymous operator", async () => {
+test("operator deep links require staff and do not expose a guest workspace", async () => {
   const hashes = [],
     renders = [];
   const context = vm.createContext({
@@ -50,8 +50,8 @@ test("old staff deep links redirect to public home and do not expose an anonymou
   );
   for (const target of ["account", "dashboard", "queue", "audit", "modules"])
     await context.navigate(target);
-  assert.deepEqual(hashes, Array(5).fill("#home"));
-  assert.deepEqual(renders, Array(5).fill("home"));
+  assert.deepEqual(hashes, Array(5).fill("#account"));
+  assert.deepEqual(renders, Array(5).fill("account"));
 });
 
 test("public bootstrap uses a browser guest session even when an operator session exists", async () => {
@@ -90,4 +90,71 @@ test("public bootstrap uses a browser guest session even when an operator sessio
   assert.deepEqual(calls, ["/auth/me", "/auth/guest", "/health"]);
   assert.equal(context.accessMode, "public");
   assert.equal(context.principal.role, "applicant");
+});
+
+test("staff navigation honors admin/helpdesk roles and redirects anonymous access to login", async () => {
+  for (const [role, expected] of [
+    ["admin", "dashboard"],
+    ["helpdesk", "queue"],
+    [null, "account"],
+  ]) {
+    const context = vm.createContext({
+      page: "home",
+      principal: role ? { role } : null,
+      selectedApplication: null,
+      flow: null,
+      reloadWorkspace: async () => {},
+      history: { replaceState: () => {} },
+      window: { scrollTo: () => {} },
+      render: () => {},
+      stopDeliveryWatch: () => {},
+      names: {},
+    });
+    vm.runInContext(
+      source.slice(
+        source.indexOf("const names ="),
+        source.indexOf("const statuses ="),
+      ),
+      context,
+    );
+    vm.runInContext(
+      source.slice(
+        source.indexOf("async function navigate("),
+        source.indexOf("async function newFlow("),
+      ),
+      context,
+    );
+    await context.navigate("dashboard");
+    assert.equal(context.page, expected);
+  }
+});
+
+test("API requests select operator cookies only on staff pages", async () => {
+  const headers = [];
+  const context = vm.createContext({
+    page: "home",
+    flow: null,
+    authEpoch: 0,
+    FormData,
+    fetch: async (_url, options) => {
+      headers.push(options.headers);
+      return {};
+    },
+    readApiResponse: async () => ({}),
+  });
+  vm.runInContext(
+    source.slice(
+      source.indexOf("async function api("),
+      source.indexOf("async function reloadWorkspace("),
+    ),
+    context,
+  );
+  for (const page of ["home", "account", "dashboard", "queue", "result"]) {
+    context.page = page;
+    await context.api("/auth/me");
+  }
+  assert.deepEqual(
+    headers.map((h) => h["X-Workspace-Mode"]),
+    ["public", "operator", "operator", "operator", "public"],
+  );
 });

@@ -53,7 +53,7 @@ Snapshot contoh struktur (nilai routing berasal dari model, tidak boleh dikirim 
     "demo_routing_score": null,
     "routing_score": null,
     "calibrated": false,
-    "policy_version": "demo-routing-v3-arcface-r50",
+    "policy_version": "demo-routing-v4-arcface-r50-auto50",
     "scope": "synthetic_only"
   },
   "identity_verified": false,
@@ -61,7 +61,7 @@ Snapshot contoh struktur (nilai routing berasal dari model, tidak boleh dikirim 
 }
 ```
 
-Contoh di atas **schema**, bukan skor/preset aplikasi. Field score null bila tidak dapat dinilai. Routing 74,99/75/94,99/95 diperiksa sebelum pembulatan.
+Contoh di atas **schema**, bukan skor/preset aplikasi. Field score null bila tidak dapat dinilai. Routing demo 49,99/50 dan produksi 74,99/75/94,99/95 diperiksa sebelum pembulatan.
 
 ## Backend induk / widget
 
@@ -112,3 +112,7 @@ Adapter mock mengembalikan `status: passed`, `simulated: true`, `identity_demo_p
 Saat siap: `complete=true`, `document_capture_token` opaque. Client mengirim **blob persis dari respons itu** dan token ke `POST /api/sessions/{id}/document` (`capture_token` opsional Form). Server mengikat token ke hash foto, revisi sesi dan umur ≤20 detik, lalu menggunakan hasil OCR tersimpan; tidak membaca ulang seluruh gambar. Token kedaluwarsa/replay/foto berubah/revisi berubah ditolak 409 sebelum attempt dibebankan. Unggahan manual tanpa token tetap menjalankan OCR nyata dan halaman koreksi identitas. Semua aturan consent/nonce/ownership tetap berlaku.
 
 Silau pada kartu yang dapat dilokalisasi mengembalikan warning capture agar sudut/pencahayaan diubah. Pemeriksaan ini bukan Document Liveness atau pembuktian PVC asli.
+
+## Operator dan ambang demo 3.1.1
+
+UI mengirim `X-Workspace-Mode=operator` hanya pada account/dashboard/queue/audit/modules, sehingga cookie petugas terpisah dari kapabilitas pemohon publik. `/workspace` tetap membutuhkan role helpdesk/admin; respons menambahkan `routing_policy` (mode, calibrated, automatic_threshold, version). Respons routing pemohon menampilkan ambang dan `demo_model_override`, tanpa mengekspos raw evidence/mandatory operator. Pada hasil akhir PDF approved, status UI menjadi pass sambil `model_status` dan `model_reason` menyimpan keputusan model asli. Nilai/failed checks tidak diubah. `demo_score_eligible` adalah penilaian internal workflow atas kontrol server; tidak diterima dari browser. Ambang ≥50 hanya berlaku demo tanpa kalibrasi; produksi/profil terkalibrasi memakai ≥95.

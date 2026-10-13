@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.model.repository import utcnow
-from app.services.score_policy import ScorePolicy
+from app.services.score_policy import DEMO_SOFT_CONTROLS, ScorePolicy
 from app.services.authority import AuthorityService
 
 JAKARTA = ZoneInfo("Asia/Jakarta")
@@ -152,6 +152,8 @@ class WorkflowService:
                         "policy_version",
                         "decision",
                         "scope",
+                        "automatic_threshold",
+                        "demo_model_override",
                         "security_review",
                     ]
                 }
@@ -340,15 +342,22 @@ class WorkflowService:
                     else bool(result.get("identity_verified"))
                 ),
             }
-            policy_result = result
+            demo_eligible = bool(controls) and all(
+                c["status"] == "passed"
+                or (c["status"] == "failed" and c["name"] in DEMO_SOFT_CONTROLS)
+                for c in controls
+            )
+            policy_result = {**result, "demo_score_eligible": demo_eligible}
             if result["status"] == "pass" and not complete:
-                policy_result = {**result, "status": "capture"}
+                policy_result = {**policy_result, "status": "capture"}
             routing = self.policy.route(policy_result, mandatory)
             routing_reason = {
                 "MANUAL_PENDING": "Verifikasi otomatis memerlukan pemeriksaan tambahan oleh helpdesk.",
                 "REJECTED": "Permohonan ini belum dapat disetujui. Gunakan informasi bantuan atau peninjauan keberatan.",
                 "AUTO_APPROVED": "Kontrol lokal dan kewenangan permohonan demo terpenuhi. Hanya hasil sintetis yang dapat dibuka.",
             }.get(routing["decision"], result["reason"])
+            if routing.get("demo_model_override"):
+                routing_reason = "Skor routing demo memenuhi ambang ≥50/100. Ketidakpastian model diterima khusus untuk PDF sintetis; skor dan kontrol asli tetap tercatat."
             if routing["security_review"]:
                 routing_reason = "Pemeriksaan memberi sinyal risiko keamanan. Sinyal model bukan bukti pasti penipuan; permohonan ini memerlukan peninjauan keamanan."
             app["payload"].update(

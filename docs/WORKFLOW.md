@@ -8,14 +8,14 @@ Profil ini **bukan layanan resmi OJK**, tidak memanggil Dukcapil/SLIK resmi dan 
 
 ```mermaid
 flowchart TD
-  A[Pemohon tanpa login / cookie browser / permohonan persisten] --> B[Camera + QualityGate lokal]
+  A[Pemohon tanpa login / cookie browser / permohonan persisten] --> B[Camera + ROI quality server]
   B --> C[Tier 1 CPU: OCR, identitas, wajah 1:1]
   C --> D[Tier 2: liveness PIPNet + Swin PAD]
   D --> E[Server: proof, nonce, revision, metrik asli]
   E --> F[ScorePolicy + pemeriksaan wajib]
-  F -->|>=95 dan seluruh syarat / profil diizinkan| G[AUTO_APPROVED]
-  F -->|>=75 dan <95 atau syarat butuh tinjauan| H[MANUAL_PENDING]
-  F -->|<75 / aturan keamanan| I[REJECTED: permohonan ini]
+  F -->|demo >=50 dan bukti sah / produksi >=95 semua syarat| G[AUTO_APPROVED]
+  F -->|demo <50 atau syarat butuh tinjauan| H[MANUAL_PENDING]
+  F -->|aturan keamanan / produksi <75| I[REJECTED: permohonan ini]
   F -->|capture / model belum tersedia| J[CAPTURE_RETRY / TECHNICAL_PENDING]
   J --> B
   H --> K[Kuota hari ini otomatis: transaksi kapasitas dan retensi]
@@ -35,7 +35,7 @@ State machine diperiksa backend, bukan oleh field browser. Kamera berumur 15 men
 1. `npm run setup`, `npm start`, buka localhost:4173.
 2. Langsung pilih Pendaftaran → Perseorangan, tanpa login. Browser memperoleh kapabilitas acak 256-bit melalui cookie HttpOnly/SameSite Strict. Permohonan/hasil hanya tersedia pada browser yang memegang cookie tersebut. Login tetap diperlukan petugas.
 3. Setujui pemrosesan dan pernyataan permohonan untuk diri sendiri. OCR, selfie/gerakan dan foto memegang KTP memakai model sebenarnya. Nama/tanggal lahir harus lengkap; NIK berasal dari OCR. KTP tidak dikirim ke pihak luar pada profil lokal.
-4. QualityGate browser memberi panduan blur, cahaya dan silau dengan **heuristik demo**, serta posisi dari kotak wajah terakhir yang diberikan server. Ia tidak memiliki model visibilitas wajah baru. Server tetap memeriksa wajah/penutup, NIK, wajah 1:1, PAD dan proof. Bila model kualitas yang sesuai tersedia, `QualityGate.loadOnnx` mendukung runtime ONNX Runtime Web yang disediakan aplikasi induk, WASM default, bytes model dengan SHA-256, kontrak RGB NCHW [1,3,N,N] 0–1 dan output probabilitas kualitas tunggal. Tidak ada model kualitas fiktif atau unduhan browser/CDN otomatis.
+4. Frame baru dikirim untuk pemeriksaan ROI server; filter kualitas seluruh video tidak menghentikan OCR/holding/liveness. Capture dokumen otomatis memakai konsensus NIK/nama/tanggal lahir serta token foto/revisi, glare ROI sebelum OCR dan pembacaan ulang field terbatas. Lihat [OCR](OCR.md).
 5. Hasil MANUAL_PENDING otomatis mengambil satu kuota **hari ini** dalam transaksi atomik. Sebelum jam buka, slot hari ini dapat dipesan untuk pemeriksaan saat layanan buka. Setelah jam tutup, hari libur atau kuota penuh, tetap MANUAL_PENDING dengan pesan dan hari kerja berikutnya sebagai petunjuk (bukan janji/reservasi). Klik Cek kuota hari ini lagi pada hari kerja berikutnya; bukti/revisi yang sama dipakai selama retensi masih berlaku. Pemohon tidak memilih jadwal mendatang.
 6. Hasil yang disetujui otomatis mengunduh PDF setelah backend menyatakan SLIK_READY. Halaman hasil memantau kasus manual setiap lima detik, tanpa request paralel; unduhan dimulai ketika helpdesk menyetujui dan laporan tersedia. Menu Permohonan saya tidak ada. Simpan nomor APP untuk membuka hasil melalui Status layanan jika meninggalkan halaman. Tombol unduh ulang tersedia jika browser memblokir unduhan otomatis. Tidak ada email pengiriman hasil. PDF memerlukan cookie browser pemilik yang sama dan keputusan/revisi/expiry valid. Mengetahui APP ID sendiri tidak memberi akses. Menghapus cookie atau memakai perangkat/browser lain kehilangan akses; tidak ada pemulihan identitas/email yang belum diverifikasi. Cookie bukan bukti identitas atau kewenangan resmi.
 
@@ -48,7 +48,7 @@ npm run user:create -- --login helpdesk-demo --role helpdesk
 npm run user:create -- --login administrator-demo --role admin
 ```
 
-Perintah meminta sandi di terminal, tidak di argument/log. UI login/workspace petugas dihapus sejak 3.0.3; gunakan klien API berotorisasi atau integrasi aplikasi induk untuk pemeriksaan manual. Cookie petugas terpisah dari cookie pemohon; logout petugas tidak menghapus permohonan browser. Helpdesk melihat kasus yang belum diambil atau ditugaskan kepadanya. Panggil endpoint kasus `/manual/start` pada tanggal dan jam yang dipesan, lalu `/manual/review`. Periksa foto, bukti proof, hasil model, alasan, identitas resmi dan kewenangan. Keputusan harus menyebut revisi bukti yang sedang diperiksa dan catatan dasar. Tombol identitas/kewenangan mencatat **pemeriksaan manual demo**; tidak mengubah hasil Dukcapil menjadi resmi. Persetujuan produksi ditahan jika prosedur wajib belum terpenuhi.
+Perintah meminta sandi di terminal, tidak di argument/log. UI login/workspace petugas tersedia kembali sejak 3.1.1. Klik Akses petugas atau Workspace operator, masuk dengan akun terminal tersebut. Admin mengakses ringkasan/audit/konfigurasi; helpdesk diarahkan ke antrean yang diizinkan. Logout membersihkan state petugas; pemohon tetap memakai cookie browser terpisah tanpa login. Cookie petugas terpisah dari cookie pemohon; logout petugas tidak menghapus permohonan browser. Helpdesk melihat kasus yang belum diambil atau ditugaskan kepadanya. Panggil endpoint kasus `/manual/start` pada tanggal dan jam yang dipesan, lalu `/manual/review`. Periksa foto, bukti proof, hasil model, alasan, identitas resmi dan kewenangan. Keputusan harus menyebut revisi bukti yang sedang diperiksa dan catatan dasar. Tombol identitas/kewenangan mencatat **pemeriksaan manual demo**; tidak mengubah hasil Dukcapil menjadi resmi. Persetujuan produksi ditahan jika prosedur wajib belum terpenuhi.
 
 Administrator melihat volume setiap state, antrean, observasi retry, gangguan teknis, rata-rata latensi verifikasi dan waktu tunggu, runtime/fallback; ia mengubah kapasitas/jadwal/retensi dan ambang. Admin tidak boleh membuat keputusan helpdesk melalui tombol review. Untuk mencoba capture sebagai admin di demo, hanya permohonan yang dimiliki akun itu sendiri dapat diakses; admin tidak mendapatkan nonce milik pemohon lain. Akun integration hanya untuk backend induk, tidak untuk UI pemohon atau inference worker.
 
@@ -75,3 +75,5 @@ REJECTED berlaku pada permohonan ini. Ada informasi bantuan/peninjauan keberatan
 Laporan demo mengikuti susunan panduan iDeb pengguna: pencarian, data pokok debitur perseorangan, ringkasan fasilitas, rincian kredit, riwayat 12 bulan, agunan/penjamin dan legenda. Generator ReportLab di backend mengirim application/pdf dengan Content-Disposition attachment, tanpa window.print. Nama/NIK/tanggal lahir mengikuti EvidenceStore server, bukan field browser. Yang diacak hanya fasilitas/nominal/riwayat keuangan; kolom identitas yang tidak tersedia tidak diisi data palsu. Semua halaman bertanda DEMO - BUKAN INFORMASI DEBITUR RESMI, dan sumber identitas resmi tetap belum terverifikasi.
 
 Financial generator menggunakan seed dari stable issuance ID (bukan NIK), dan payload final disimpan terenkripsi. Unduh ulang/idempotent retries mempertahankan financial data, bukan mengacak ulang untuk issuance yang sama. Laporan lama schema v2 dibentuk ulang satu kali ke v3 pada akses oleh pemilik dengan keputusan yang masih valid, untuk menyelaraskan identitas dengan bukti server. Posisi data September 2026 adalah contoh tetap. Generator bukan layanan SLIK resmi dan model KYC tidak menggunakan financial RNG.
+
+Pada demo tanpa kalibrasi 3.1.1, routing ≥50/100 dapat menerima ketidakpastian PAD/cosine untuk laporan sintetis. Kontrol asli tetap disimpan. Capture/NIK/binding/pemilik yang tidak memenuhi syarat tetap menahan PDF. Lihat [kebijakan skor](SCORING.md). Hasil historis tidak dihitung ulang; aturan baru berlaku pada verifikasi baru.

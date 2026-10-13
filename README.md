@@ -1,5 +1,7 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.1.1**: **Workspace operator** dan **Akses petugas** tersedia kembali (`#dashboard`, `#account`), dengan login helpdesk/admin dan hak akses per peran. Pemohon tetap tanpa login. Skor routing **heuristik demo ≥50/100** dapat menyetujui otomatis dan mengunduh PDF SLIK sintetis, termasuk ketidakpastian PAD/kemiripan wajah. Nilai model dan kontrol yang gagal tetap dicatat, bukan diganti menjadi lulus. NIK berbeda, identitas tidak lengkap, bukti liveness/nonce tidak sah, kualitas capture gagal, error teknis atau penolakan keamanan tetap menahan hasil. Skor <50 atau syarat wajib belum terpenuhi masuk pemeriksaan manual/kuota hari ini. Produksi/profil terkalibrasi tetap memakai aturan sebelumnya. Restart server dan reload browser setelah pull; tidak perlu bobot/dependency baru.
+
 Pembaruan **3.1.0**: OCR kamera memakai crop perspektif resolusi asli, pembacaan ulang ROI terbatas, dan konsensus server ≥3 frame untuk NIK/nama/tanggal lahir. Capture otomatis diikat ke foto persis yang diperiksa; hasil ambigu tetap perlu diperiksa pengguna. Label rusak dicocokkan dari tata letak tanpa mengarang ejaan identitas atau digit NIK. Pantulan putih besar pada ROI kartu ditolak sebelum OCR. Pencocokan wajah memakai **InsightFace ArcFace ResNet50**, menggantikan SFace; detektor YuNet dan Swin PAD tetap dipakai. Document Liveness dibatalkan sesuai permintaan. Lihat [rincian OCR](docs/OCR.md). Setelah pull, hentikan server lama, jalankan `npm run setup` untuk bobot baru dan `npm start`. Bobot InsightFace hanya untuk riset nonkomersial, bukan lisensi penggunaan produksi.
 
 Pembaruan **3.0.4**: Dukcapil pada mode demo dianggap **passed** dan ditampilkan sebagai **MOCK · lolos simulasi**. Respons adapter memiliki `status=passed`, `simulated=true`, dan hasil/permohonan memiliki `identity_demo_passed=true`. Flag `identity_verified` tetap khusus validasi resmi. Pemeriksaan OCR/wajah/gerakan/PAD dan aturan keputusan tetap berjalan. Profil produksi tetap memerlukan adapter resmi. Restart server sesudah pull; perubahan berlaku untuk pemeriksaan baru.
@@ -23,7 +25,7 @@ npm run setup
 npm start
 ```
 
-Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. UI hanya menampilkan layanan pemohon. Pemeriksaan manual tetap tersedia lewat API integrasi berotorisasi; akun API helpdesk/admin dibuat melalui terminal, tanpa credential bawaan:
+Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. Menu Workspace operator tersedia melalui Akses petugas; pemohon tetap memakai cookie browser terpisah tanpa login. Akun helpdesk/admin dibuat melalui terminal, tanpa credential bawaan:
 
 ```bash
 npm run user:create -- --login helpdesk-demo --role helpdesk

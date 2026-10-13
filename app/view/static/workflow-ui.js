@@ -27,10 +27,15 @@ const approvedStates = [
   "SLIK_READY",
 ];
 const keyForAction = () => crypto.randomUUID();
+function accountView() {
+  if (["admin", "helpdesk"].includes(principal?.role))
+    return `<section class="public-form-panel"><h1>Akun petugas</h1><p>${esc(principal.login)} · ${esc(principal.role)}</p><button class="button primary" data-page="${principal.role === "admin" ? "dashboard" : "queue"}">Workspace petugas</button><button class="button" data-logout>Keluar</button></section>`;
+  return `<section class="public-form-panel"><span class="home-kicker">AKSES DEMO LOKAL</span><h1>Masuk sebagai petugas</h1><p>Halaman ini untuk helpdesk dan administrator. Pemohon langsung memilih Pendaftaran tanpa login.</p><form id="account-form"><div class="field"><label for="account-login">Nama akun</label><input id="account-login" name="login" autocomplete="username" required minlength="3" maxlength="80"></div><div class="field"><label for="account-password">Kata sandi</label><input id="account-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button class="button primary" name="action" value="login">Masuk</button></div></form><p class="state-note">Akun helpdesk/administrator dibuat melalui perintah administrator di terminal. Email bukan kanal pengiriman hasil pada demo ini.</p></section>`;
+}
 function applicationPanel(app, operator = false) {
   const routing = app.routing || {};
   const manual = app.state === "MANUAL_PENDING";
-  return `<section class="panel config-panel application-panel"><div class="panel-head"><div><small>${esc(app.id)} · bukti versi ${app.capture_revision}</small><h2>${esc(stateLabels[app.state] || app.state)}</h2></div><span class="badge ${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? "orange" : "blue"}">${esc(app.state)}</span></div><p>${esc(app.state === "SLIK_READY" ? "Verifikasi disetujui. PDF SLIK demo diunduh otomatis. Jika browser menahan unduhan, gunakan tombol unduh ulang." : app.reason || "Ikuti langkah verifikasi untuk melanjutkan permohonan.")}</p>${typeof routing.routing_score === "number" ? `<div class="routing-score"><strong>${(Math.floor(routing.routing_score * 100) / 100).toFixed(2)}<small>/100</small></strong><span>Skor routing ${routing.calibrated ? "terkalibrasi" : "heuristik demo"}<br>Bukan persentase kepastian identitas. Tampilan dipotong dua desimal; keputusan memakai nilai asli.</span></div>` : ""}<p class="simulation-note">${app.identity_demo_passed ? "Dukcapil: MOCK · lolos simulasi." : `Identitas resmi: ${app.identity_verified ? "terverifikasi oleh prosedur berwenang" : "belum terverifikasi"}.`} Identitas laporan mengikuti data KTP server; data keuangannya acak sintetis.</p>${manual ? `<div class="callout">${esc(app.manual_admission?.message || "Kuota hari ini akan diperiksa otomatis menggunakan bukti yang sudah diambil.")}${app.manual_admission?.next_working_day ? `<br>Hari kerja berikutnya: ${esc(app.manual_admission.next_working_day)}. Ketersediaan diperiksa kembali saat mencoba; belum ada slot yang dipesan.` : ""}</div>` : ""}${app.reservation ? `<div class="callout">Kasus ${esc(app.reservation.case_id)} · ${esc(app.reservation.day)} · ${esc(app.reservation.window)} WIB<br>Status ${esc(app.reservation.state)}</div><p>Halaman ini memeriksa status otomatis. PDF diunduh setelah pemeriksaan disetujui. Simpan nomor permohonan untuk mengecek melalui Status layanan pada browser yang sama.</p>` : ""}${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? `<p class="callout">${routing.security_review ? "Pemeriksaan memberi sinyal risiko keamanan. Ini bukan bukti pasti penipuan. " : ""}${esc(app.appeal)}</p>` : ""}${
+  return `<section class="panel config-panel application-panel"><div class="panel-head"><div><small>${esc(app.id)} · bukti versi ${app.capture_revision}</small><h2>${esc(stateLabels[app.state] || app.state)}</h2></div><span class="badge ${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? "orange" : "blue"}">${esc(app.state)}</span></div><p>${esc(app.state === "SLIK_READY" ? "Verifikasi disetujui. PDF SLIK demo diunduh otomatis. Jika browser menahan unduhan, gunakan tombol unduh ulang." : app.reason || "Ikuti langkah verifikasi untuk melanjutkan permohonan.")}</p>${typeof routing.routing_score === "number" ? `<div class="routing-score"><strong>${(Math.floor(routing.routing_score * 100) / 100).toFixed(2)}<small>/100</small></strong><span>Skor routing ${routing.calibrated ? "terkalibrasi" : "heuristik demo"}<br>Bukan persentase kepastian identitas. ${routing.automatic_threshold === 50 ? "Ambang persetujuan otomatis demo: ≥50/100." : ""} Tampilan dipotong dua desimal; keputusan memakai nilai asli.</span></div>` : ""}${routing.demo_model_override ? '<p class="callout">Disetujui dengan ambang skor demo. Ada kontrol model yang belum terpenuhi; nilai aslinya tetap tercatat. PDF berisi data keuangan sintetis.</p>' : ""}<p class="simulation-note">${app.identity_demo_passed ? "Dukcapil: MOCK · lolos simulasi." : `Identitas resmi: ${app.identity_verified ? "terverifikasi oleh prosedur berwenang" : "belum terverifikasi"}.`} Identitas laporan mengikuti data KTP server; data keuangannya acak sintetis.</p>${manual ? `<div class="callout">${esc(app.manual_admission?.message || "Kuota hari ini akan diperiksa otomatis menggunakan bukti yang sudah diambil.")}${app.manual_admission?.next_working_day ? `<br>Hari kerja berikutnya: ${esc(app.manual_admission.next_working_day)}. Ketersediaan diperiksa kembali saat mencoba; belum ada slot yang dipesan.` : ""}</div>` : ""}${app.reservation ? `<div class="callout">Kasus ${esc(app.reservation.case_id)} · ${esc(app.reservation.day)} · ${esc(app.reservation.window)} WIB<br>Status ${esc(app.reservation.state)}</div><p>Halaman ini memeriksa status otomatis. PDF diunduh setelah pemeriksaan disetujui. Simpan nomor permohonan untuk mengecek melalui Status layanan pada browser yang sama.</p>` : ""}${["REJECTED", "MANUAL_REJECTED"].includes(app.state) ? `<p class="callout">${routing.security_review ? "Pemeriksaan memberi sinyal risiko keamanan. Ini bukan bukti pasti penipuan. " : ""}${esc(app.appeal)}</p>` : ""}${
     operator
       ? `<div class="result-controls">${Object.entries(routing.mandatory || {})
           .map(
@@ -247,7 +252,27 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   try {
-    if (button.dataset.application)
+    if (button.hasAttribute("data-logout")) {
+      await api("/auth/logout", { method: "POST" });
+      authEpoch++;
+      stopDeliveryWatch();
+      stopCamera();
+      $("#modal").close();
+      releasePreviews();
+      principal = null;
+      applicationRows = [];
+      selectedApplication = null;
+      operatorMetrics = null;
+      workspace = {
+        records: [],
+        audit: [],
+        settings: {},
+        health: { ready: false, files: {} },
+      };
+      flow = null;
+      selectedApplication = null;
+      await navigate("account");
+    } else if (button.dataset.application)
       await showApplication(button.dataset.application);
     else if (button.dataset.tryToday) {
       await api(`/applications/${button.dataset.tryToday}/manual/try-today`, {
@@ -316,6 +341,7 @@ document.addEventListener("submit", async (event) => {
   const form = event.target;
   if (
     ![
+      "account-form",
       "manual-booking-form",
       "manual-review-form",
       "capacity-config-form",
@@ -326,7 +352,22 @@ document.addEventListener("submit", async (event) => {
   if (!form.checkValidity()) return form.reportValidity();
   const data = Object.fromEntries(new FormData(form));
   try {
-    if (form.id === "manual-booking-form") {
+    if (form.id === "account-form") {
+      const body = { login: data.login, password: data.password };
+      authEpoch++;
+      principal = (
+        await api("/auth/login", { method: "POST", body: JSON.stringify(body) })
+      ).principal;
+      flow = null;
+      selectedApplication = null;
+      await navigate(
+        principal.role === "helpdesk"
+          ? "queue"
+          : principal.role === "admin"
+            ? "dashboard"
+            : "home",
+      );
+    } else if (form.id === "manual-booking-form") {
       await api(
         `/applications/${form.dataset.id}/manual/${form.dataset.move === "true" ? "move" : "reserve"}`,
         {

@@ -58,10 +58,10 @@ def prepare(client, face_image, owner=None, manual=False):
         "nik_masked": "•••• •••• •••• 3456",
         "reason": "Protocol policy fixture",
         "scores": {
-            "face_cosine": 0.48 if manual else 0.62,
+            "face_cosine": 0.2 if manual else 0.62,
             "kyc_face_cosine": 0.93,
-            "liveness": 0.89 if manual else 0.972,
-            "ocr": 0.98,
+            "liveness": 0.4 if manual else 0.972,
+            "ocr": 0.8 if manual else 0.98,
         },
         "checks": [
             {
@@ -88,10 +88,12 @@ def service_day(client):
 @pytest.mark.parametrize(
     "score,decision",
     [
-        (74.99, "REJECTED"),
-        (75, "MANUAL_PENDING"),
-        (94, "MANUAL_PENDING"),
-        (94.99, "MANUAL_PENDING"),
+        (49.99, "MANUAL_PENDING"),
+        (50, "AUTO_APPROVED"),
+        (74.99, "AUTO_APPROVED"),
+        (75, "AUTO_APPROVED"),
+        (94, "AUTO_APPROVED"),
+        (94.99, "AUTO_APPROVED"),
         (95, "AUTO_APPROVED"),
         (100, "AUTO_APPROVED"),
     ],
@@ -941,3 +943,36 @@ def test_capacity_idempotency_response_is_encrypted_at_rest(client, face_image):
         manual.reserve(app["id"], client.fixture_actor, moment.date().isoformat(), key)
         == first
     )
+
+
+@pytest.mark.parametrize(
+    "score,decision",
+    [
+        (74.99, "REJECTED"),
+        (75, "MANUAL_PENDING"),
+        (94.99, "MANUAL_PENDING"),
+        (95, "AUTO_APPROVED"),
+    ],
+)
+def test_calibrated_production_keeps_previous_thresholds(monkeypatch, score, decision):
+    policy = ScorePolicy()
+    policy.mode = "production"
+    policy.calibrator.calibrated = True
+    monkeypatch.setattr(policy.calibrator, "score", lambda _: (score, {}))
+    routed = policy.route(
+        {"status": "pass", "scores": {}}, {key: True for key in REQUIRED_CONTROLS}
+    )
+    assert routed["decision"] == decision and routed["automatic_threshold"] == 95
+    assert not routed["demo_model_override"]
+
+
+def test_operator_workspace_reports_routing_policy_without_exposing_it_to_guests(
+    client,
+):
+    operator = client.get("/api/workspace")
+    assert operator.status_code == 200
+    assert operator.json()["routing_policy"]["automatic_threshold"] == 50
+    assert operator.json()["routing_policy"]["mode"] == "demo"
+    assert client.get(
+        "/api/workspace", headers={"X-Workspace-Mode": "public", "Authorization": ""}
+    ).status_code in [401, 403]

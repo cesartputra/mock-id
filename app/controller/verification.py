@@ -206,7 +206,8 @@ def workspace(request: Request):
             cases = con.execute("SELECT application_id FROM manual_cases WHERE state!='CANCELLED' AND (assigned_to IS NULL OR assigned_to=?)",(actor(request)['id'],)).fetchall()
             allowed = {request.app.state.workflow.get(con,row['application_id'])['payload'].get('verification_id') for row in cases}
         records = [r for r in records if r['id'] in allowed]
-    return {'records': records, 'audit': repository.events() if actor(request)['role']=='admin' else [], 'settings': repository.settings(), 'health': verifier.availability()}
+    policy=request.app.state.workflow.policy
+    return {'routing_policy': {'automatic_threshold': policy.automatic_threshold, 'mode': policy.mode, 'calibrated':policy.calibrator.calibrated, 'version': policy.calibrator.version}, 'records': records, 'audit': repository.events() if actor(request)['role']=='admin' else [], 'settings': repository.settings(), 'health': verifier.availability()}
 
 
 class CaptureStart(BaseModel):
@@ -472,8 +473,12 @@ async def verify(session_id: str, request: Request, nonce: str = Form(...),
             if application['state']=='AUTO_APPROVED':
                 application=await asyncio.to_thread(request.app.state.slik.issue,application['id'],actor(request))
             result['application'] = application
-            normalized = {'CAPTURE_RETRY':'capture','TECHNICAL_PENDING':'technical','MANUAL_PENDING':'manual','MANUAL_SCHEDULED':'manual','REJECTED':'attack' if application['routing']['security_review'] else 'rejected'}.get(application['state'])
-            if normalized: result['status'] = normalized
+            normalized = {'AUTO_APPROVED':'pass','SLIK_PENDING':'pass','SLIK_READY':'pass','CAPTURE_RETRY':'capture','TECHNICAL_PENDING':'technical','MANUAL_PENDING':'manual','MANUAL_SCHEDULED':'manual','REJECTED':'attack' if application['routing']['security_review'] else 'rejected'}.get(application['state'])
+            if normalized:
+                result['model_status'] = result['status']
+                result['model_reason'] = result['reason']
+                result['status'] = normalized
+                result['reason'] = application['reason']
             if application.get('retry'):result['retry'] = application['retry']
             repository.save_result(result)
         session.last_result = result

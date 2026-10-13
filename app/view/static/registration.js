@@ -15,6 +15,7 @@ const purposeLabels = {
   correction: "Pemeriksaan dan koreksi data",
 };
 const publicPages = new Set([
+  "account",
   "home",
   "result",
   "registration",

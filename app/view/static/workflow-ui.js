@@ -52,10 +52,10 @@ function routingExplanation(routing) {
   const rows = Object.entries(routing.contributions)
     .map(
       ([key, points]) =>
-        `<tr><td>${esc(labels[key] || key)}</td><td>${Number(routing.components[key]).toFixed(2)}</td><td>${(Number(routing.weights[key]) * 100).toFixed(0)}%</td><td>${Number(points).toFixed(2)}</td></tr>`,
+        `<tr><td>${esc(labels[key] || key)}</td><td>${Number(routing.components[key]).toFixed(2)}</td><td>${(Number(routing.weights[key]) * 100).toFixed(2)}%</td><td>${Number(points).toFixed(2)}</td></tr>`,
     )
     .join("");
-  return `<details class="routing-explanation"><summary>Asal perhitungan skor</summary><div class="routing-table-scroll"><table><thead><tr><th>Komponen</th><th>Poin heuristik</th><th>Bobot</th><th>Kontribusi</th></tr></thead><tbody>${rows}</tbody></table></div><p>Skor = jumlah (poin × bobot). Semua kontrol wajib juga harus terpenuhi. ${routing.ai_evidence_usable === false ? "Classifier AI belum meyakinkan: tidak mendapat poin bukti dan memerlukan tinjauan." : ""}</p>${routing.assessment?.blocked_controls?.length ? `<p>Perlu diperiksa: ${routing.assessment.blocked_controls.map((name) => esc(controlLabels[name] || name)).join(", ")}.</p>` : ""}</details>`;
+  return `<details class="routing-explanation"><summary>Asal perhitungan skor</summary><div class="routing-table-scroll"><table><thead><tr><th>Komponen</th><th>Poin heuristik</th><th>Bobot</th><th>Kontribusi</th></tr></thead><tbody>${rows}</tbody></table></div><p>Skor = jumlah (poin × bobot). Semua kontrol wajib juga harus terpenuhi. ${routing.ai_validation_required === false ? "Classifier AI hanya diagnostik opsional dan tidak memengaruhi skor atau kelulusan." : routing.ai_evidence_usable === false ? "Classifier AI belum meyakinkan: tidak mendapat poin bukti dan memerlukan tinjauan." : ""}</p>${routing.assessment?.blocked_controls?.length ? `<p>Perlu diperiksa: ${routing.assessment.blocked_controls.map((name) => esc(controlLabels[name] || name)).join(", ")}.</p>` : ""}</details>`;
 }
 function applicationPanel(app, operator = false) {
   const routing = app.routing || {};

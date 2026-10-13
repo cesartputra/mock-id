@@ -15,9 +15,11 @@ CONTROL_NAMES = (
     "Kontinuitas wajah capture",
     "Anti-spoof / PAD",
     "PAD foto memegang KTP",
-    "Classifier gambar AI (diagnostik)",
     "Dukcapil",
 )
+
+
+OPTIONAL_CONTROLS = {"Classifier gambar AI (diagnostik)"}
 
 
 def assess_controls(result, mandatory, *, demo):
@@ -34,11 +36,6 @@ def assess_controls(result, mandatory, *, demo):
             passed = demo and status == "passed" and detail.get("simulated") is True
         else:
             passed = status == "passed"
-        if (
-            name == "Classifier gambar AI (diagnostik)"
-            and result.get("scores", {}).get("ai_reliability", True) is not True
-        ):
-            passed, status = False, "review"
         controls.append(
             {
                 "name": name,
@@ -50,7 +47,7 @@ def assess_controls(result, mandatory, *, demo):
         )
     # Every additional check participates; it cannot disappear through "advisory".
     for name, matches in by_name.items():
-        if name not in CONTROL_NAMES:
+        if name not in CONTROL_NAMES and name not in OPTIONAL_CONTROLS:
             controls.append(
                 {
                     "name": name or "Kontrol tanpa nama",
@@ -87,6 +84,11 @@ def assess_controls(result, mandatory, *, demo):
     )
     return {
         "controls": controls,
+        "optional_controls": [
+            dict(c, effect="advisory")
+            for name in OPTIONAL_CONTROLS
+            for c in by_name.get(name, [])
+        ],
         "coverage": coverage,
         "all_passed": not blocked,
         "blocked_controls": blocked,

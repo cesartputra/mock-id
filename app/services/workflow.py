@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from app.model.repository import utcnow
 from app.services.score_policy import ScorePolicy
+from app.services.assessment import OPTIONAL_CONTROLS
 from app.services.authority import AuthorityService
 
 JAKARTA = ZoneInfo("Asia/Jakarta")
@@ -156,7 +157,7 @@ class WorkflowService:
                         "demo_model_override",
                         "security_review",
                         "components", "weights", "contributions", "formula",
-                        "assessment", "ai_evidence_usable",
+                        "assessment", "ai_evidence_usable", "ai_validation_required",
                     ]
                 }
             ),
@@ -304,7 +305,7 @@ class WorkflowService:
             controls = [
                 c
                 for c in result["checks"]
-                if c.get("effect") != "advisory" and c["mode"] != "mock"
+                if c.get("effect") != "advisory" and c["mode"] != "mock" and c.get("name") not in OPTIONAL_CONTROLS
             ]
             from datetime import date
             import re

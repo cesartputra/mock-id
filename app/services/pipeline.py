@@ -31,7 +31,7 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-MODEL_FILES = ['yunet.onnx', 'arcface_r50.onnx', PAD_FILE, 'deepfake.onnx', 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
+MODEL_FILES = ['yunet.onnx', 'arcface_r50.onnx', PAD_FILE, 'pipnet.onnx', 'palm.onnx', 'handpose.onnx', 'face_attrib.onnx']
 
 
 class VerificationService:
@@ -43,6 +43,8 @@ class VerificationService:
         self.dukcapil = DukcapilService()
         self.last_error = None
         self.assets_verified = False
+        self.ai_load_attempted = False
+        self.diagnostic_error = None
         self.subject_key = secrets.token_bytes(32)
         # Uncalibrated demo uses temporal evidence; strict profiles keep minimum PAD.
         # Final demo approval still follows the explicit 50-point routing policy.
@@ -54,7 +56,8 @@ class VerificationService:
     def availability(self):
         files = {f: (WEIGHTS / f).is_file() for f in MODEL_FILES}
         files['ocr'] = len(list((WEIGHTS / 'ocr').glob('*.onnx'))) >= 3
-        return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.deepfake,self.landmarks,self.visibility]),
+        return {'ready': all(files.values()), 'files': files, 'loaded': all(v is not None for v in [self.face,self.pad,self.landmarks,self.visibility]),
+                'diagnostics': {'ai': {'required': False, 'available': (WEIGHTS / 'deepfake.onnx').is_file(), 'loaded': self.deepfake is not None, 'error': self.diagnostic_error}},
                 'last_error': self.last_error, 'dukcapil': 'mock' if os.getenv('MOCK_ID_MODE','demo')=='demo' else 'official_not_configured', 'inference': 'real', 'pad_model': PAD_MODEL, 'face_model': FACE_MODEL, 'face_model_id': FACE_MODEL_ID,
                 'pad_runtime': dict(self.pad.model.status) if self.pad else ({'requested':'remote','selected':'remote','runtime':'Remote PAD · menunggu respons worker','fallback_reason':None,'loaded':False,'providers':[]} if os.getenv('MOCK_ID_PAD_WORKER_URL') else {**pad_policy(), 'loaded': False, 'providers': []}),
                 'other_runtime': 'CPU (OCR, wajah, landmark, tangan, penutup wajah, diagnostik)'}
@@ -64,18 +67,26 @@ class VerificationService:
         if missing:
             raise ModelUnavailable('Model belum tersedia: '+', '.join(missing)+'. Jalankan python scripts/setup_models.py.')
         if not self.assets_verified:
-            invalid = verify_assets()
+            invalid = verify_assets(exclude=('deepfake.onnx',))
             if invalid:
                 raise ModelUnavailable('Checksum model tidak cocok: '+', '.join(invalid))
             self.assets_verified = True
-        if self.deepfake is None:
+        if any(value is None for value in [self.face, self.pad, self.landmarks, self.visibility]):
             face = self.face or FaceService()
             pad = self.pad or create_pad_service()
-            deepfake = DeepfakeService()
             landmarks = self.landmarks or LandmarkService(face)
             visibility = self.visibility or FaceVisibilityService(face, landmarks)
             self.ocr.load()
-            self.face, self.pad, self.deepfake, self.landmarks, self.visibility = face, pad, deepfake, landmarks, visibility
+            self.face, self.pad, self.landmarks, self.visibility = face, pad, landmarks, visibility
+        if self.deepfake is None and not self.ai_load_attempted:
+            self.ai_load_attempted = True
+            try:
+                if verify_assets(only=('deepfake.onnx',)):
+                    raise ModelUnavailable('Bobot diagnostik AI tidak tersedia atau checksum tidak cocok.')
+                self.deepfake = DeepfakeService()
+            except Exception:
+                self.diagnostic_error = 'Diagnostik AI tidak tersedia; pemeriksaan KYC utama tetap berjalan.'
+                log.warning('Optional AI diagnostic unavailable; core verification remains available.')
 
     def inspect_capture(self, image, holding=False, capture=None):
         # Nonblocking lock: preview must not queue behind a full verification.
@@ -83,7 +94,7 @@ class VerificationService:
             return {'ready':False,'warnings':[{'code':'inference_busy','message':'Model sedang memproses capture lain. Tunggu pemeriksaan kamera berikutnya.'}],'mode':'real'}
         try:
             if self.visibility is None:
-                invalid=verify_assets()
+                invalid=verify_assets(exclude=('deepfake.onnx',))
                 if invalid:
                     raise ModelUnavailable('Model hilang/berubah: '+', '.join(invalid)+'. Jalankan npm run setup.')
                 face=self.face or FaceService()
@@ -271,7 +282,7 @@ class VerificationService:
             if not self.availability()['files']['ocr']:
                 raise ModelUnavailable('Model OCR belum diunduh. Jalankan python scripts/setup_models.py.')
             if not self.assets_verified:
-                invalid = verify_assets()
+                invalid = verify_assets(exclude=('deepfake.onnx',))
                 if invalid:
                     raise ModelUnavailable('Model hilang/berubah: '+', '.join(invalid))
                 self.assets_verified = True
@@ -391,10 +402,12 @@ class VerificationService:
                 stage = "verify"
                 # This generic AI-image classifier is not calibrated for KYC
                 # camera images. Preserve outputs and assess input disagreement;
-                # uncertainty requires review, never a definitive fraud verdict.
+                # optional uncertainty is diagnostic only and cannot gate KYC.
                 diagnostic = {'name': 'Classifier gambar AI (diagnostik)', 'mode': 'real',
-                              'effect': 'required', 'stage': stage, 'calibrated': False}
+                              'effect': 'advisory', 'stage': stage, 'calibrated': False}
                 try:
+                    if self.deepfake is None:
+                        raise ModelUnavailable('Diagnostik AI tidak tersedia.')
                     fake = self.deepfake.assess(selfie, self_face)
                     held_fake = self.deepfake.assess(holding, holding_face)
                     fake_risk = max(fake['fake_probability'], held_fake['fake_probability'])
@@ -406,12 +419,12 @@ class VerificationService:
                         'input_scope': 'full_camera_image',
                         'reference_threshold': rules['deepfake_risk'],
                         'reliable': bool(ai_reliable),
-                        'message': 'Classifier menyumbang skor bukti gambar. Skor tinggi atau perbedaan besar antar input memerlukan tinjauan; bukan bukti pasti manipulasi.'})
+                        'message': 'Classifier AI hanya diagnostik opsional. Tidak memengaruhi skor atau kelulusan KYC; skor tinggi bukan bukti pasti manipulasi.'})
                 except Exception:
                     log.error('Image diagnostic unavailable for session %s', session.id)
                     scores['ai_reliability'] = False
                     diagnostic.update(status='unavailable', detail={
-                        'message': 'Analisis gambar tidak tersedia; verifikasi lengkap memerlukan pemeriksaan ulang.'})
+                        'message': 'Diagnostik AI tidak tersedia; pemeriksaan KYC utama tetap berjalan.'})
                 checks.append(diagnostic)
                 if not live["passed"]:
                     status, reason = 'capture', 'Gerakan tantangan belum terbaca. Ulangi capture dengan wajah terang dan gerakan lebih jelas.'
@@ -428,11 +441,8 @@ class VerificationService:
                             "attack",
                             "Model anti-spoof / PAD memberi sinyal risiko foto atau layar. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.",
                         )
-                elif diagnostic['status'] == 'unavailable':
-                    status, reason = 'technical', 'Classifier gambar belum tersedia. Jalankan pemeriksaan ulang.'
-                    retry = {'stage': 'verify', 'label': 'Jalankan pemeriksaan ulang', 'reason': reason}
-                elif held_pad['live_probability'] < rules['pad_probability'] or diagnostic['status'] != 'passed':
-                    status, reason = 'manual', 'Bukti PAD foto KYC atau classifier gambar belum meyakinkan. Diperlukan pemeriksaan petugas.'
+                elif held_pad['live_probability'] < rules['pad_probability']:
+                    status, reason = 'manual', 'Bukti PAD foto KYC belum meyakinkan. Diperlukan pemeriksaan petugas.'
                 elif not same_card or face_score < rules['face_cosine'] or kyc_face_score < rules['face_cosine'] or not same_face:
                     status, reason = 'manual', 'Kesesuaian dokumen atau wajah belum memenuhi ambang. Perlu pemeriksaan petugas.'
         except CaptureError as exc:
@@ -463,7 +473,7 @@ class VerificationService:
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
                   'rules': rules, 'retry': retry, 'identity_verified': bool(dukcapil['identity_verified']), 'dukcapil': dukcapil, 'inference': 'real',
-                  'decision_policy': 'kyc-core-v3-all-controls-context-ai'}
+                  'decision_policy': 'kyc-core-v4-ai-optional', 'ai_validation_required': False}
         result["pad_review_required"] = bool(
             self.pad_review_enabled
             and status == "manual"

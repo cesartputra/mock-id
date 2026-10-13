@@ -162,12 +162,12 @@ def test_production_without_calibration_cannot_autoapprove(monkeypatch):
 def test_calibration_artifact_requires_integrity_and_evaluation(monkeypatch, tmp_path):
     data = {
         "schema": 2,
-        "feature_policy": "all-controls-v1-pad-min-geometry-ai-context",
+        "feature_policy": "core-controls-v2-pad-min-geometry-ai-optional",
         "model_sha256": __import__("app.services.score_policy", fromlist=["calibration_contract"]).calibration_contract(),
         "version": "calibration-fixture-v2",
         "face_model": "insightface-buffalo-l-w600k-r50",
         "points": DEMO_POINTS,
-        "weights": {"face": .25, "pad": .25, "ocr": .1, "ai": .1, "controls": .3},
+        "weights": {"face": .25/.90, "pad": .25/.90, "ocr": .1/.90, "controls": .3/.90},
         "evaluation_report": "fixture only — not approved production accuracy",
         "approved_by": "protocol-test",
     }

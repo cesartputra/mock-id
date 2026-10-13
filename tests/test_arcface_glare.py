@@ -96,13 +96,13 @@ def test_sface_setting_is_migrated_once_and_custom_arcface_setting_persists(tmp_
 def test_old_face_calibration_cannot_be_reused(monkeypatch, tmp_path):
     artifact = {
         "schema": 2,
-        "feature_policy": "all-controls-v1-pad-min-geometry-ai-context",
+        "feature_policy": "core-controls-v2-pad-min-geometry-ai-optional",
         "model_sha256": __import__("app.services.score_policy", fromlist=["calibration_contract"]).calibration_contract(),
         "version": "fixture",
         "approved_by": "fixture",
         "evaluation_report": "fixture",
         "points": DEMO_POINTS,
-        "weights": {"face": .25, "pad": .25, "ocr": .1, "ai": .1, "controls": .3},
+        "weights": {"face": .25/.90, "pad": .25/.90, "ocr": .1/.90, "controls": .3/.90},
         "face_model": "sface",
     }
     path = tmp_path / "calibration.json"

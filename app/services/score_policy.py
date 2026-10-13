@@ -13,7 +13,6 @@ DEMO_POINTS = {
     "face": [(-1, 0), (0.2, 40), (0.4, 75), (0.5, 92), (0.6, 97), (0.85, 100)],
     "pad": [(0, 0), (0.8, 75), (0.9, 92), (0.95, 97), (0.995, 100)],
     "ocr": [(0, 0), (0.6, 60), (0.8, 85), (0.9, 95), (1, 100)],
-    "ai": [(0, 0), (1, 100)],
     "controls": [(0, 0), (1, 100)],
 }
 REQUIRED_CONTROLS = {
@@ -25,16 +24,26 @@ REQUIRED_CONTROLS = {
     "approved_identity_procedure",
 }
 
-# Latest policy: every control is a gate. Numeric strength cannot replace
+# Latest policy: every required non-AI control is a gate. Numeric strength cannot replace
 # missing, failed or uncertain identity/security evidence.
-WEIGHTS = {"face": 0.25, "pad": 0.25, "ocr": 0.10, "ai": 0.10, "controls": 0.30}
-FEATURE_POLICY = "all-controls-v1-pad-min-geometry-ai-context"
+# Preserve relative weights of the four required components after removing AI.
+WEIGHTS = {
+    "face": 0.25 / 0.90,
+    "pad": 0.25 / 0.90,
+    "ocr": 0.10 / 0.90,
+    "controls": 0.30 / 0.90,
+}
+FEATURE_POLICY = "core-controls-v2-pad-min-geometry-ai-optional"
 
 
 def calibration_contract():
     manifest = json.loads((ROOT / "model-manifest.json").read_text())
     # OCR, detectors, landmarks and visibility also affect control coverage.
-    return {item["file"]: item["sha256"] for item in manifest}
+    return {
+        item["file"]: item["sha256"]
+        for item in manifest
+        if item["file"] != "deepfake.onnx"
+    }
 
 
 def mapped(value, points):
@@ -48,7 +57,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v6-all-controls"
+        self.version = "demo-routing-v7-ai-optional"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -105,7 +114,6 @@ class ScoreCalibrator:
             "kyc_face_cosine",
             "liveness",
             "ocr",
-            "deepfake",
             "validation_coverage",
         ]
         if any(
@@ -117,16 +125,13 @@ class ScoreCalibrator:
             "face": min(raw["face_cosine"], raw["kyc_face_cosine"]),
             "pad": raw["liveness"],
             "ocr": raw["ocr"],
-            "ai": 1 - raw["deepfake"] if raw.get("ai_reliability") is True else 0,
             "controls": raw["validation_coverage"],
         }
         if (
             not -1 <= values["face"] <= 1
             or not 0 <= values["pad"] <= 1
             or not 0 <= values["ocr"] <= 1
-            or not 0 <= raw["deepfake"] <= 1
             or not 0 <= values["controls"] <= 1
-            or type(raw.get("ai_reliability")) is not bool
         ):
             return None, None
         components = {
@@ -220,6 +225,7 @@ class ScorePolicy:
             "assessment": assessment,
             "formula": "sum(component_points * weight); automatic approval also requires every control passing",
             "ai_evidence_usable": raw.get("ai_reliability") is True,
+            "ai_validation_required": False,
             "calibrated": self.calibrator.calibrated,
             "policy_version": self.calibrator.version,
             "mandatory": mandatory,

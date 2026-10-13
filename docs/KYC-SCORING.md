@@ -1,4 +1,20 @@
-# KYC evidence scoring and evaluation (3.2.0)
+# KYC evidence scoring and evaluation
+
+## Current policy: optional AI (3.2.1)
+
+The owner's temporary exception makes `Classifier gambar AI (diagnostik)` advisory only. It is excluded by name from the required inventory and workflow composite controls, even if an older result marks it `required`. Its value, reliability, absence, duplicate optional records or inference/load failure cannot change score or core completeness. Required non-AI controls still gate automatic approval. Optional diagnostics remain available for operators without a failed KYC control or manipulation verdict.
+
+AI is removed from the score, not replaced with a fabricated passing value. The other component weights keep their proportions and are normalized:
+
+```text
+S = (0.25 F + 0.25 P + 0.10 O + 0.30 C) / 0.90
+```
+
+`F/P/O/C` are mapped points for face, PAD, OCR and required-control coverage respectively. The API exposes exact weights/contributions; the UI displays weights to two decimals. An AI-only disagreement therefore cannot produce a failed identity-procedure composite or a technical-pending result. Core health/load and checksum validation do not require the optional AI asset; the optional asset is separately verified before execution and failure is retained as diagnostic metadata. No model, score, PAD/identity/proof gate or historical decision is fabricated.
+
+Feature policy `core-controls-v2-pad-min-geometry-ai-optional` requires a new approved calibration artifact for the four active features and active model hashes; old five-component artifacts are incompatible. Default remains an uncalibrated demo. Existing scheduled cases and their quota/audit/evidence remain intact. Restart, reload and start a new verification to use the new policy.
+
+## Historical policy: all controls including AI (3.2.0)
 
 ## Complete evidence and approval
 

@@ -49,7 +49,10 @@ test("operator diagnostics keep the raw score without labelling it a failed cont
     context.checkRows(result, { diagnostics: true });
   assert.match(html, /99.7%/);
   assert.match(html, /Diagnostik/);
-  assert.match(html, /Sinyal tambahan untuk skor dan tinjauan KYC/);
+  assert.match(
+    html,
+    /Diagnostik opsional, tidak memengaruhi skor atau kelulusan KYC/,
+  );
   assert.doesNotMatch(html, /Fake probability|Belum terpenuhi/);
 });
 test("a real core failure remains visible in applicant results", () => {
@@ -170,7 +173,7 @@ test("routing explanation exposes all five contributions and blocks uncertainty 
       ],
     },
   });
-  assert.match(html, /25%|30%|10%/);
+  assert.match(html, /25.00%|30.00%|10.00%/);
   assert.match(html, /Poin heuristik|Semua kontrol wajib juga harus terpenuhi/);
   assert.match(html, /tidak mendapat poin bukti|Binding bukti sesi/);
   assert.doesNotMatch(html, /session_nonce_proof/);
@@ -200,4 +203,65 @@ test("current uncertain classifier evidence is shown as review without a fraud v
   assert.match(html, /Perlu tinjauan|antar input tidak konsisten/);
   assert.match(html, /Skor tinggi bukan bukti manipulasi/);
   assert.doesNotMatch(html, /tidak menentukan kelulusan/);
+});
+
+test("optional AI is hidden from applicant controls and cannot look like a failed validation", () => {
+  const current = {
+    ...result,
+    ai_validation_required: false,
+    checks: [
+      {
+        name: "Classifier gambar AI (diagnostik)",
+        effect: "advisory",
+        status: "review",
+        mode: "real",
+        detail: { reliable: false, message: "Diagnostik opsional" },
+      },
+    ],
+  };
+  assert.doesNotMatch(
+    context.checkRows(current),
+    /Classifier|Perlu tinjauan|Belum terpenuhi/,
+  );
+  const operator =
+    context.checkRows(current, { diagnostics: true }) +
+    context.scoreCards(current, { diagnostics: true });
+  assert.match(
+    operator,
+    /badge blue|Diagnostik opsional|tidak memengaruhi skor atau kelulusan KYC/,
+  );
+  assert.doesNotMatch(operator, /badge orange|Perlu tinjauan|Belum terpenuhi/);
+});
+
+test("four-component score explains AI exclusion and normalized weights", () => {
+  const workflow = fs.readFileSync("app/view/static/workflow-ui.js", "utf8");
+  const panel = vm.createContext({ esc: String });
+  vm.runInContext(
+    workflow.slice(
+      workflow.indexOf("function routingExplanation("),
+      workflow.indexOf("function applicationPanel("),
+    ),
+    panel,
+  );
+  const html = panel.routingExplanation({
+    contributions: { face: 26, pad: 27, ocr: 10, controls: 33 },
+    components: { face: 93.6, pad: 97.2, ocr: 90, controls: 99 },
+    weights: {
+      face: 0.25 / 0.9,
+      pad: 0.25 / 0.9,
+      ocr: 0.1 / 0.9,
+      controls: 0.3 / 0.9,
+    },
+    ai_validation_required: false,
+    ai_evidence_usable: false,
+  });
+  assert.match(html, /27.78%|11.11%|33.33%/);
+  assert.match(
+    html,
+    /Classifier AI hanya diagnostik opsional dan tidak memengaruhi skor atau kelulusan/,
+  );
+  assert.doesNotMatch(
+    html,
+    /tidak mendapat poin bukti dan memerlukan tinjauan|<td>Bukti classifier AI/,
+  );
 });

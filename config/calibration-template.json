@@ -1,11 +1,10 @@
 {
   "schema": 2,
   "face_model": "insightface-buffalo-l-w600k-r50",
-  "feature_policy": "all-controls-v1-pad-min-geometry-ai-context",
+  "feature_policy": "core-controls-v2-pad-min-geometry-ai-optional",
   "model_sha256": {
     "yunet.onnx": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
     "arcface_r50.onnx": "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43",
-    "deepfake.onnx": "5ff8e82ac798012af4fbb9072a2ce5322d98b7b81dd3861c4b04ad8f8d88f79b",
     "cvpr2024_swin_v2_face.onnx": "2dd90b431279fe331a6b145cb54bbab5e157108fc0cd1d05509f851e246ae583",
     "ocr/PP-OCRv6_det_small.onnx": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
     "ocr/ch_ppocr_mobile_v2.0_cls_mobile.onnx": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
@@ -49,16 +48,6 @@
         100
       ]
     ],
-    "ai": [
-      [
-        0,
-        0
-      ],
-      [
-        1,
-        100
-      ]
-    ],
     "controls": [
       [
         0,
@@ -71,10 +60,9 @@
     ]
   },
   "weights": {
-    "face": 0.25,
-    "pad": 0.25,
-    "ocr": 0.1,
-    "ai": 0.1,
-    "controls": 0.3
+    "face": 0.2777777777777778,
+    "pad": 0.2777777777777778,
+    "ocr": 0.11111111111111112,
+    "controls": 0.3333333333333333
   }
 }

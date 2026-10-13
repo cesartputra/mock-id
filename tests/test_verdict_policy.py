@@ -51,7 +51,7 @@ def test_image_evidence_participates_in_kyc_and_registration_handoff(client, pol
     diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
     assert diagnostic['status'] == 'passed' and not diagnostic['calibrated']
     assert not any(c['status'] == 'failed' for c in result['checks'])
-    assert result['decision_policy'] == 'kyc-core-v3-all-controls-context-ai'
+    assert result['decision_policy'] == 'kyc-core-v4-ai-optional'
     assert not result['identity_verified']
     assert client.app.state.repository.result(result['id']) == result
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
@@ -59,7 +59,7 @@ def test_image_evidence_participates_in_kyc_and_registration_handoff(client, pol
     assert response.status_code == 409  # Raw pass has no persistent application approval.
     # Changing a diagnostic threshold cannot turn valid captures into attacks.
     client.app.state.repository.set_settings({**result['rules'], 'deepfake_risk': .01})
-    assert run()['status'] == 'manual'
+    assert run()['status'] == 'pass'
 
 
 @pytest.mark.parametrize('field,value,status', [
@@ -83,7 +83,7 @@ def test_advisory_classifier_exception_does_not_invalidate_core_checks(policy_ca
     state, run, _session = policy_case
     state['diagnostic_error'] = True
     result = run()
-    assert result['status'] == 'technical' and 'deepfake' not in result['scores']
+    assert result['status'] == 'pass' and 'deepfake' not in result['scores']
     diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
     assert diagnostic['status'] == 'unavailable'
 

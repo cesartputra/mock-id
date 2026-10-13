@@ -73,15 +73,15 @@ def test_weighted_sum_and_ai_direction_are_auditable_and_not_identity_probabilit
     assert sum(routing["contributions"].values()) == pytest.approx(
         routing["routing_score"]
     )
-    assert routing["components"]["ai"] == 99 and not routing["calibrated"]
+    assert "ai" not in routing["components"] and not routing["calibrated"]
     result["scores"]["deepfake"] = 0.5
     lower = ScorePolicy().route(result, mandatory)
-    assert lower["routing_score"] == pytest.approx(routing["routing_score"] - 4.9)
+    assert lower["routing_score"] == routing["routing_score"]
     result["scores"]["ai_reliability"] = False
     unusable = ScorePolicy().route(result, mandatory)
-    assert unusable["components"]["ai"] == 0
-    # Reliability must itself gate, even when a check mistakenly claims passed.
-    assert unusable["decision"] != "AUTO_APPROVED"
+    assert "ai" not in unusable["components"]
+    # AI reliability is optional and never gates the complete core evidence.
+    assert unusable["decision"] == "AUTO_APPROVED"
 
 
 def test_ai_context_disagreement_is_uncertainty_not_a_high_score_selected_for_pass():
@@ -136,28 +136,28 @@ def test_bound_recording_is_not_penalized_twice_by_its_first_selfie(
     assert result["status"] == "pass"
 
 
-def test_classifier_failure_is_technical_and_disagreement_goes_to_today_review(
+def test_ai_disagreement_does_not_block_valid_core_evidence(
     client, face_image, policy_case
 ):
     state, run, session = policy_case
     state["ai_reliable"] = False
     result = run()
-    assert result["status"] == "manual" and result["scores"]["ai_reliability"] is False
+    assert result["status"] == "pass" and result["scores"]["ai_reliability"] is False
     session.document_result["fields"].update(name="TEST", birth="1990-01-01")
     session.proof_checked_revision = session.revision
     session.liveness_selfie = "bound-protocol-fixture"
     workflow = client.app.state.workflow
     workflow.attest(session.application_id, client.fixture_actor, True)
     app = workflow.ingest(session, result, face_image, face_image, [])
-    assert app["state"] == "MANUAL_PENDING" and app["routing"]["components"]["ai"] == 0
-    from test_workflow import service_day
-
-    service_day(client)
     assert (
-        client.app.state.manual.admit_today(app["id"], client.fixture_actor)["state"]
-        == "MANUAL_SCHEDULED"
+        app["state"] == "AUTO_APPROVED" and not app["routing"]["ai_validation_required"]
     )
-    assert client.get("/api/applications/" + app["id"] + "/slik.pdf").status_code == 409
+    assert app["routing"]["assessment"]["all_passed"]
+    issued = client.app.state.slik.issue(app["id"], client.fixture_actor)
+    assert issued["state"] == "SLIK_READY"
+    assert client.get(
+        "/api/applications/" + app["id"] + "/slik.pdf"
+    ).content.startswith(b"%PDF")
 
 
 def test_offline_evaluation_needs_genuine_and_attack_labels_and_does_not_approve_calibration():

@@ -3,10 +3,12 @@ import json
 from app.config import ROOT, WEIGHTS
 
 
-def verify_assets():
+def verify_assets(*, exclude=(), only=None):
     manifest = json.loads((ROOT / 'model-manifest.json').read_text())
     missing = []
     for entry in manifest:
+        if entry['file'] in exclude or (only is not None and entry['file'] not in only):
+            continue
         path = WEIGHTS / entry['file']
         if not path.is_file():
             missing.append(entry['file'])

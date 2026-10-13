@@ -15,7 +15,9 @@ const purposeLabels = {
   correction: "Pemeriksaan dan koreksi data",
 };
 const publicPages = new Set([
+  "account",
   "home",
+  "result",
   "registration",
   "verify",
   "postkyc",
@@ -46,7 +48,9 @@ function publicRegistration() {
 }
 function draftDefaults(preview) {
   return {
-    name: preview ? "PEMOHON DEMO" : flow?.ocr?.fields?.name || "",
+    name: preview
+      ? "PEMOHON DEMO"
+      : selectedApplication?.name || flow?.ocr?.fields?.name || "",
     email: preview ? "pemohon@example.com" : "",
     phone: preview ? "081234567890" : "",
     address: preview
@@ -59,7 +63,9 @@ function canContinueAfterKyc() {
   return (
     applicationContext.preview ||
     applicationContext.debtorType !== "individual" ||
-    flow?.result?.status === "pass"
+    approvedStates.includes(
+      selectedApplication?.state || flow?.result?.application?.state,
+    )
   );
 }
 function postKycView() {
@@ -77,7 +83,7 @@ function postKycView() {
 }
 function registrationFields(draft) {
   const kind = applicationContext.debtorType;
-  return `<form id="registration-data-form"><div class="form-grid"><div class="field wide"><label for="registration-name">${kind === "business" ? "Nama badan usaha" : "Nama pemohon"} <em>*</em></label><input id="registration-name" name="name" value="${esc(draft.name)}" required minlength="2" maxlength="100" autocomplete="name"></div><div class="field"><label for="registration-email">Email tujuan <em>*</em></label><input id="registration-email" name="email" value="${esc(draft.email)}" type="email" maxlength="120" required autocomplete="email"></div><div class="field"><label for="registration-phone">Nomor ponsel <em>*</em></label><input id="registration-phone" name="phone" value="${esc(draft.phone)}" type="tel" inputmode="tel" pattern="\\+?[0-9]{9,16}" required autocomplete="tel" placeholder="08xxxxxxxxxx"></div><div class="field wide"><label for="registration-address">Alamat pemohon <em>*</em></label><input id="registration-address" name="address" value="${esc(draft.address)}" minlength="5" maxlength="250" required autocomplete="street-address"></div><div class="field wide"><label for="registration-purpose">Tujuan permohonan <em>*</em></label><select id="registration-purpose" name="purpose">${Object.entries(
+  return `<form id="registration-data-form"><div class="form-grid"><div class="field wide"><label for="registration-name">${kind === "business" ? "Nama badan usaha" : "Nama pemohon"} <em>*</em></label><input id="registration-name" name="name" value="${esc(draft.name)}" required minlength="2" maxlength="100" autocomplete="name" ${kind === "individual" && !applicationContext.preview ? "readonly" : ""}></div><div class="field"><label for="registration-email">Email tujuan <em>*</em></label><input id="registration-email" name="email" value="${esc(draft.email)}" type="email" maxlength="120" required autocomplete="email"></div><div class="field"><label for="registration-phone">Nomor ponsel <em>*</em></label><input id="registration-phone" name="phone" value="${esc(draft.phone)}" type="tel" inputmode="tel" pattern="\\+?[0-9]{9,16}" required autocomplete="tel" placeholder="08xxxxxxxxxx"></div><div class="field wide"><label for="registration-address">Alamat pemohon <em>*</em></label><input id="registration-address" name="address" value="${esc(draft.address)}" minlength="5" maxlength="250" required autocomplete="street-address"></div><div class="field wide"><label for="registration-purpose">Tujuan permohonan <em>*</em></label><select id="registration-purpose" name="purpose">${Object.entries(
     purposeLabels,
   )
     .map(
@@ -110,7 +116,7 @@ function receiptView() {
   return `<section class="public-form-panel receipt-panel"><div class="receipt-symbol">${icon("check")}</div><span class="home-kicker">BUKTI PENDAFTARAN DEMO</span><h1>Permohonan demo diterima</h1><p>Simpan nomor ini untuk melihat status layanan di aplikasi lokal.</p><div class="receipt-number"><small>NOMOR PENDAFTARAN</small><strong>${esc(r.id)}</strong></div><dl class="registration-summary"><div><dt>Pemohon</dt><dd>${esc(r.name)}</dd></div><div><dt>Jenis debitur</dt><dd>${debtorTypes[r.debtor_type]}</dd></div><div><dt>Waktu pendaftaran</dt><dd>${date(r.created)} WIB</dd></div><div><dt>Status</dt><dd><span class="badge orange">Diterima — mock</span></dd></div><div><dt>Verifikasi wajah</dt><dd>${r.kyc === "local_checks_passed" ? "Kontrol lokal terpenuhi" : r.kyc === "preview" ? "Pratinjau; KYC belum dijalankan" : "Tidak berlaku untuk jenis debitur ini"}</dd></div></dl><div class="registration-notice neutral">${icon("info")}<p>Ini bukan bukti pendaftaran OJK. Tidak ada laporan SLIK yang diterbitkan atau email yang dikirim. Pengecekan Dukcapil belum dilakukan.</p></div><div class="receipt-actions"><button class="button" data-download-receipt>${icon("download")} Unduh bukti demo</button><button class="button primary" data-page="status">Cek status layanan</button><button class="button link" data-page="home">Kembali ke beranda</button></div></section>`;
 }
 function publicStatus() {
-  return `<section class="public-form-panel">${registrationHeader("?", "Status layanan", "Cek pendaftaran yang tersimpan pada server demo ini.")}<form id="registration-status-form"><div class="field"><label for="registration-number">Nomor pendaftaran demo <em>*</em></label><input id="registration-number" name="registration_id" placeholder="DEMO-XXXXXXXXXX" value="${esc(registrationReceipt?.id || "")}" required maxlength="30"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-page="home">Kembali</button><button type="submit" class="button primary">Cek status ${icon("arrow")}</button></div></form></section>`;
+  return `<section class="public-form-panel">${registrationHeader("?", "Status layanan", "Masukkan nomor permohonan untuk mengecek pemeriksaan atau mengunduh PDF.")}<form id="registration-status-form"><div class="field"><label for="registration-number">Nomor permohonan / pendaftaran <em>*</em></label><input id="registration-number" name="registration_id" placeholder="APP-… atau DEMO-…" value="${esc(registrationReceipt?.id || "")}" required maxlength="30"></div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-page="home">Kembali</button><button type="submit" class="button primary">Cek status ${icon("arrow")}</button></div></form></section>`;
 }
 async function goPublic(target) {
   location.hash = target;
@@ -126,7 +132,7 @@ document.addEventListener("click", async (event) => {
       registrationStep = 0;
       await goPublic("postkyc");
     } else if (button.hasAttribute("data-continue-registration")) {
-      if (flow?.result?.status !== "pass") return;
+      if (!approvedStates.includes(flow?.result?.application?.state)) return;
       applicationContext = { debtorType: "individual", preview: false };
       registrationDraft = draftDefaults(false);
       registrationStep = 0;
@@ -177,6 +183,7 @@ document.addEventListener("submit", async (event) => {
   const data = Object.fromEntries(new FormData(form));
   try {
     if (form.id === "debtor-form") {
+      selectedApplication = null;
       applicationContext = { debtorType: data.debtorType, preview: false };
       registrationStep = 0;
       registrationDraft = null;
@@ -215,7 +222,13 @@ document.addEventListener("submit", async (event) => {
             debtor_type: applicationContext.debtorType,
             preview: applicationContext.preview,
             ...(realIndividual
-              ? { session_id: flow.session.id, verification_id: flow.result.id }
+              ? {
+                  application_id:
+                    selectedApplication?.id || flow?.session?.application_id,
+                  session_id: flow?.session?.id,
+                  verification_id:
+                    selectedApplication?.verification_id || flow?.result?.id,
+                }
               : {}),
           }),
         });
@@ -225,6 +238,15 @@ document.addEventListener("submit", async (event) => {
         render();
       }
     } else {
+      const requestedId = data.registration_id.trim().toUpperCase();
+      if (requestedId.startsWith("APP-")) {
+        selectedApplication = await api(
+          "/applications/" + encodeURIComponent(requestedId),
+        );
+        rememberApplication(selectedApplication.id);
+        await goPublic("result");
+        return;
+      }
       registrationReceipt = await api(
         `/registrations/${encodeURIComponent(data.registration_id.trim().toUpperCase())}`,
       );

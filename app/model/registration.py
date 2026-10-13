@@ -6,6 +6,7 @@ class RegistrationRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     debtor_type: Literal['individual', 'business', 'deceased']
     preview: bool = False
+    application_id: str | None = None
     session_id: str | None = None
     verification_id: str | None = None
     name: str = Field(min_length=2, max_length=100)

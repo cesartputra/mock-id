@@ -7,6 +7,8 @@ from pathlib import Path
 import ssl
 import sys
 import subprocess
+import shutil
+import zipfile
 import urllib.parse
 import urllib.request
 
@@ -56,6 +58,19 @@ def model_request(item):
     return request
 
 
+def extract_model(archive, target, item):
+    if archive.stat().st_size != item['archive_bytes'] or digest(archive) != item['archive_sha256']:
+        raise RuntimeError('Checksum arsip gagal: '+item['file'])
+    with zipfile.ZipFile(archive) as source:
+        member = source.getinfo(item['archive_member'])
+        if member.file_size != item['bytes'] or member.is_dir():
+            raise RuntimeError('Ukuran anggota arsip tidak cocok.')
+        with source.open(member) as incoming, target.open('wb') as output:
+            shutil.copyfileobj(incoming, output, 1024*1024)
+    if target.stat().st_size != item['bytes'] or digest(target) != item['sha256']:
+        raise RuntimeError('Checksum model hasil ekstraksi gagal.')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--check', action='store_true')
@@ -74,16 +89,22 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(target.suffix+'.part')
         print(f'Download {item["file"]} ({item["bytes"]/1024/1024:.1f} MB)', flush=True)
+        archive = temporary.with_suffix('.archive.part') if item.get('archive_member') else None
+        download = archive or temporary
         try:
             req = model_request(item)
-            with opener.open(req, timeout=120) as response, temporary.open('wb') as output:
+            with opener.open(req, timeout=120) as response, download.open('wb') as output:
                 for block in iter(lambda: response.read(1024*1024), b''):
                     output.write(block)
-            if digest(temporary) != item['sha256']:
+            if archive:
+                extract_model(archive, temporary, item)
+            if temporary.stat().st_size != item['bytes'] or digest(temporary) != item['sha256']:
                 raise RuntimeError('Checksum gagal: '+item['file'])
             temporary.replace(target)
         finally:
             temporary.unlink(missing_ok=True)
+            if archive:
+                archive.unlink(missing_ok=True)
     print('Semua bobot model terverifikasi.', flush=True)
     if args.warmup:
         import cv2

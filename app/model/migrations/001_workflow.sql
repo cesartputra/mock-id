@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS principals (id TEXT PRIMARY KEY, login TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, principal_id TEXT NOT NULL REFERENCES principals(id), expires REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS applications (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES principals(id), subject_id TEXT, revision INTEGER NOT NULL, state TEXT NOT NULL, created TEXT NOT NULL, updated TEXT NOT NULL, payload TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS applications_owner ON applications(owner_id);
+CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, application_id TEXT NOT NULL REFERENCES applications(id), subject_id TEXT NOT NULL, revision INTEGER NOT NULL, policy_version TEXT NOT NULL, kind TEXT NOT NULL, created TEXT NOT NULL, expires REAL NOT NULL, ciphertext TEXT);
+CREATE INDEX IF NOT EXISTS evidence_application ON evidence(application_id, revision);
+CREATE TABLE IF NOT EXISTS manual_cases (id TEXT PRIMARY KEY, application_id TEXT UNIQUE NOT NULL REFERENCES applications(id), day TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, assigned_to TEXT, payload TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS manual_day ON manual_cases(day, state);
+CREATE TABLE IF NOT EXISTS idempotency (owner_id TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, response TEXT NOT NULL, PRIMARY KEY(owner_id,key));
+CREATE TABLE IF NOT EXISTS issuance (id TEXT PRIMARY KEY, application_id TEXT NOT NULL REFERENCES applications(id), revision INTEGER NOT NULL, state TEXT NOT NULL, report_ciphertext TEXT, UNIQUE(application_id,revision));
+CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, starts REAL NOT NULL, count INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS flow_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);

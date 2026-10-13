@@ -89,6 +89,8 @@ test("verification retry rotates nonce and resubmits the same captured blobs", a
     errors = [];
   const context = vm.createContext({
     flow,
+    selectedApplication: null,
+    observeDelivery: async () => {},
     FormData,
     Error,
     withBusy: async (action) => {

@@ -44,8 +44,8 @@ def test_real_swin_model_uses_official_class_zero_and_cpu(real_models,face_image
     logits=service.model.run(None,{service.input:face_tensor(face_image,face)})[0]
     probabilities=softmax(logits)
     result=service.score(face_image,face)
-    assert result['live_probability']==round(float(probabilities[0]),5)
-    assert result['spoof_probability']==round(float(probabilities[1]),5)
+    assert result['live_probability']==float(probabilities[0])
+    assert result['spoof_probability']==float(probabilities[1])
     assert result['model']==PAD_MODEL and result['checkpoint']=='face_swin_v2_base.pth'
     assert real_models.availability()['files'][PAD_FILE]
 

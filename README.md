@@ -1,5 +1,55 @@
 # mock-id — verifikasi identitas lokal
 
+Pembaruan **3.1.3**: `npm run user:list` menampilkan akun login yang sudah dibuat (username, peran, aktif/nonaktif). Gunakan `npm run user:list -- --role admin` atau `--role helpdesk` untuk memfilter. Password/hash tidak ditampilkan; sesi pemohon tanpa login tidak termasuk. Listing SQLite membuka database read-only dan tidak membuat database/kunci baru. Jalankan dari clone dan konfigurasi data yang sama dengan server.
+
+Pembaruan **3.1.2**: ganti password akun lokal dengan `npm run user:password -- --login admin-demo`. Terminal meminta password baru 10–200 karakter dua kali, tanpa argument password atau tampilan input. Akun/peran/bukti tetap dipertahankan, semua sesi akun lama dicabut, dan batas login akun tersebut direset. Tidak ada endpoint reset publik atau password bawaan. Setelah pull, jalankan perintah dari folder clone dan konfigurasi data yang sama dengan saat membuat akun, kemudian restart server dan login kembali.
+
+Pembaruan **3.1.1**: **Workspace operator** dan **Akses petugas** tersedia kembali (`#dashboard`, `#account`), dengan login helpdesk/admin dan hak akses per peran. Pemohon tetap tanpa login. Skor routing **heuristik demo ≥50/100** dapat menyetujui otomatis dan mengunduh PDF SLIK sintetis, termasuk ketidakpastian PAD/kemiripan wajah. Nilai model dan kontrol yang gagal tetap dicatat, bukan diganti menjadi lulus. NIK berbeda, identitas tidak lengkap, bukti liveness/nonce tidak sah, kualitas capture gagal, error teknis atau penolakan keamanan tetap menahan hasil. Skor <50 atau syarat wajib belum terpenuhi masuk pemeriksaan manual/kuota hari ini. Produksi/profil terkalibrasi tetap memakai aturan sebelumnya. Restart server dan reload browser setelah pull; tidak perlu bobot/dependency baru.
+
+Pembaruan **3.1.0**: OCR kamera memakai crop perspektif resolusi asli, pembacaan ulang ROI terbatas, dan konsensus server ≥3 frame untuk NIK/nama/tanggal lahir. Capture otomatis diikat ke foto persis yang diperiksa; hasil ambigu tetap perlu diperiksa pengguna. Label rusak dicocokkan dari tata letak tanpa mengarang ejaan identitas atau digit NIK. Pantulan putih besar pada ROI kartu ditolak sebelum OCR. Pencocokan wajah memakai **InsightFace ArcFace ResNet50**, menggantikan SFace; detektor YuNet dan Swin PAD tetap dipakai. Document Liveness dibatalkan sesuai permintaan. Lihat [rincian OCR](docs/OCR.md). Setelah pull, hentikan server lama, jalankan `npm run setup` untuk bobot baru dan `npm start`. Bobot InsightFace hanya untuk riset nonkomersial, bukan lisensi penggunaan produksi.
+
+Pembaruan **3.0.4**: Dukcapil pada mode demo dianggap **passed** dan ditampilkan sebagai **MOCK · lolos simulasi**. Respons adapter memiliki `status=passed`, `simulated=true`, dan hasil/permohonan memiliki `identity_demo_passed=true`. Flag `identity_verified` tetap khusus validasi resmi. Pemeriksaan OCR/wajah/gerakan/PAD dan aturan keputusan tetap berjalan. Profil produksi tetap memerlukan adapter resmi. Restart server sesudah pull; perubahan berlaku untuk pemeriksaan baru.
+
+Pembaruan **3.0.3**: frame preview dan liveness memakai kualitas yang sama (hingga 1920 px, JPEG 0.95, tanpa memperbesar resolusi kamera). Pada mode demo tanpa kalibrasi disetujui, skor PAD rendah diperlakukan sebagai perlu pemeriksaan manual. Gerakan tetap harus terbaca dari model; PAD tetap diperiksa pada rekaman, selfie dan foto memegang KTP. PAD yang belum terpenuhi menahan persetujuan otomatis/PDF dan otomatis mengambil kuota pemeriksaan hari ini bila tersedia. Produksi dan profil terkalibrasi mempertahankan aturan PAD ketat. Menu, form login petugas, dan halaman workspace petugas di UI dihapus; link lama diarahkan ke beranda. Sesudah pull, restart server dan reload browser.
+
+Pembaruan **3.0.2**: memperbaiki regresi pengiriman frame liveness dari versi 3.0. Filter blur/cahaya di browser tidak lagi menghentikan preview atau stream liveness; server menerima sampel berurutan dan tetap memeriksa kualitas, penutup wajah, PAD, kontinuitas dan gerakan. Label wajah terdeteksi dipisahkan dari status siap melanjutkan. Kotak wajah lama tidak lagi memblokir pemeriksaan frame baru. Sesudah pull di `development/slik-verification`, hentikan server lama, jalankan `npm start`, lalu reload browser. Tidak perlu mengunduh model baru untuk pembaruan ini.
+
+Pembaruan **3.0.1**: detektor wajah yang kehilangan frame tidak menghabiskan batas tiga rekaman liveness. Menu Permohonan saya dihapus; hasil yang sudah `SLIK_READY` otomatis mengunduh PDF dari backend. Identitas debitur (nama, NIK, tanggal lahir) berasal dari bukti KTP server; hanya data keuangan demo diacak. Unduh ulang memakai laporan tersimpan yang sama. Sesudah pull, hentikan server lama, jalankan `npm run setup` (dependency ReportLab), `npm start`, lalu reload browser.
+
+
+## Versi 3 — permohonan SLIK demo yang persisten
+
+Pembaruan ini ada di branch `development/slik-verification`. Alur lengkap: pemohon tanpa login → verifikasi model nyata → routing → pengambilan otomatis kuota hari ini dan pemeriksaan manual bila perlu → keputusan sah → hasil **DEMO — BUKAN INFORMASI DEBITUR RESMI**. Dukcapil, kewenangan resmi dan penerbitan resmi belum diintegrasikan; produksi ditahan sampai adapter/kalibrasi berwenang tersedia. Tidak ada deployment atau panggilan layanan resmi.
+
+```bash
+git fetch origin
+git switch development/slik-verification
+git pull --ff-only
+npm run setup
+npm start
+```
+
+Hentikan server lama dahulu. Buka `http://127.0.0.1:4173`, langsung pilih **Pendaftaran**. Pemohon tidak membuat akun atau login; cookie HttpOnly mengikat permohonan ke browser yang sama. Menu Workspace operator tersedia melalui Akses petugas; pemohon tetap memakai cookie browser terpisah tanpa login. Akun helpdesk/admin dibuat melalui terminal, tanpa credential bawaan:
+
+```bash
+npm run user:create -- --login helpdesk-demo --role helpdesk
+npm run user:create -- --login administrator-demo --role admin
+```
+
+- [Alur, kuota/jadwal, keputusan dan retensi](docs/WORKFLOW.md)
+- [Rumus skor demo dan kalibrasi produksi](docs/SCORING.md)
+- [Kontrak API dan integrasi widget/backend induk](docs/API.md)
+- [Mac M1, CoreML/CPU/CUDA, worker dan deployment adapters](docs/DEPLOYMENT.md)
+
+Sesi kamera sementara dipisahkan dari applications, evidence AES-GCM, cases, jadwal, auth, audit dan issuance di database. Persetujuan manual tetap dapat dilanjutkan setelah restart. Evidence penting yang diganti membatalkan keputusan lama. Backend pendaftaran menolak nama berbeda dari identitas yang diputuskan server. Header `X-Local-Client` kini hanya marker; cookie kapabilitas browser/bearer dan role/resource ownership tetap diwajibkan meskipun pemohon tidak login. Field raw model/diagnostik tersedia untuk operator berwenang; pemohon menerima status, instruksi dan skor routing berlabel heuristik.
+
+QualityGate browser memakai pemeriksaan lokal **heuristik demo** sampai model kualitas yang valid tersedia; interface ONNX Runtime Web/WASM disediakan tanpa model/kemampuan fiktif. Model/server recheck tetap wajib. Tier 2 worker PAD opsional tidak menerima NIK, nonce atau akses DB SLIK. CUDA dependency Linux terpisah dari Mac, dengan fallback runtime sebenarnya. PostgreSQL/private object storage adapters dan Redis owner registry tersedia; capture state masih memerlukan satu gateway/sticky routing, bukan full distributed proof restore.
+
+`npm test` mencakup routing 74,99/75/94/94,99/95/100, mandatory controls, persistence/restart, race slot terakhir, cancel/move/idempotency, holidays/hours, revocation, role/owner authorization, AEAD integrity/retention dan downstream retry. Model CPU asli tetap diuji; fixture routing/manual tidak membuktikan akurasi KYC. Tes fisik NVIDIA/servis deployment dilewatkan bila lingkungan tidak tersedia. Lihat [laporan pengujian](docs/TESTING.md).
+
+Bagian versi 2 di bawah adalah riwayat implementasi. **Endpoint review/schedule legacy kini ditutup**; gunakan applications/manual API. Hasil `pass` kamera sendiri atau status `approved` historis tidak lagi mengotorisasi handoff. Model/reference/licensing tetap sama; struktur MVC ditambah `migrations`, layanan auth/score/workflow/evidence/manual/slik, controller applications/auth dan views workflow/quality-gate.
+
+
 Proyek lokal dengan halaman pendaftaran bergaya iDebKu dan modul OCR KTP, pencocokan wajah 1:1, tantangan liveness, anti-spoofing, klasifikasi manipulasi gambar, serta KYC dengan foto pemohon memegang KTP. **Pemrosesan foto memakai model open source sungguhan secara lokal; Swin V2 memakai CoreML + CPU otomatis pada Mac Apple Silicon, model lain memakai CPU. Dukcapil dan pendaftaran layanan OJK memakai mock.**
 
 Backend FastAPI, frontend HTML/CSS/JavaScript, penyimpanan SQLite. Dashboard mulai kosong; tidak ada skenario hasil atau skor preset. Hasil yang belum dikerjakan tampil kosong, dan gangguan model tampil sebagai gangguan teknis.
@@ -65,9 +115,9 @@ app/
 └── services/
     ├── pipeline.py            # Orkestrasi pemeriksaan dan keputusan
     ├── ocr.py                 # RapidOCR + parser identitas
-    ├── face.py                # YuNet + SFace
+    ├── face.py                # YuNet + ArcFace R50
     ├── landmarks.py           # PIPNet + MediaPipe Hand ONNX
-    ├── antispoof.py           # MiniFASNetV2
+    ├── antispoof.py           # Swin V2-B
     ├── deepfake.py             # ViT Real/Fake
     ├── card.py                # Kartu: geometri, fitur referensi, susunan teks
     ├── visibility.py          # FaceAttribNet dan umpan balik kamera
@@ -108,17 +158,17 @@ Foto memegang KTP memberi **bukti pendukung bahwa orang tersebut terlihat memega
 | Pemeriksaan | Implementasi | Sumber |
 |---|---|---|
 | OCR | RapidOCR 3.10 / PaddleOCR ONNX, multilingual recognition | [RapidOCR](https://github.com/RapidAI/RapidOCR) |
-| Wajah | OpenCV YuNet dan SFace; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [SFace](https://huggingface.co/opencv/face_recognition_sface) |
+| Wajah | OpenCV YuNet + InsightFace ArcFace R50; cosine similarity | [YuNet](https://huggingface.co/opencv/face_detection_yunet), [ArcFace R50](https://github.com/deepinsight/insightface/tree/master/model_zoo) |
 | Gerakan | PIPNet 68 landmarks / ONNX Runtime CPU; EAR, lebar mulut, pergeseran hidung | [PIPNet ONNX](https://github.com/yakhyo/pipnet-onnx) |
 | Tangan | MediaPipe Palm/Hand versi ONNX melalui OpenCV Zoo | [Palm](https://huggingface.co/opencv/palm_detection_mediapipe), [Hand](https://huggingface.co/opencv/handpose_estimation_mediapipe) |
 | Anti-spoof | CVPR 2024 Swin V2-B face / ONNX Runtime CoreML + CPU (Apple Silicon) atau CPU | [Implementasi dan checkpoint resmi](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge) |
 | Diagnostik gambar (tidak menentukan kelulusan) | ViT dima806 Real/Fake, ONNX quantized | [Model asal](https://huggingface.co/dima806/deepfake_vs_real_image_detection), [Konversi ONNX](https://huggingface.co/onnx-community/deepfake_vs_real_image_detection-ONNX) |
 | Penutup wajah | FaceAttribNet / ONNX CPU; lima probabilitas independen | [Face Attribute](https://github.com/yakhyo/face-attribute) |
-| Dukcapil | Adapter mock yang selalu menyatakan belum diverifikasi | `app/services/dukcapil.py` |
+| Dukcapil | Adapter mock: passed untuk simulasi demo, validasi resmi terpisah | `app/services/dukcapil.py` |
 
 Bobot mengikuti sumber dan checksum dalam manifest. Wrapper PIPNet (MIT), FaceAttribNet (BSD-3-Clause), dan OpenCV MediaPipe (Apache-2.0) disertakan dengan lisensinya di `app/services/vendor`; lihat [THIRD_PARTY.md](THIRD_PARTY.md). Runtime tidak memerlukan PyTorch, GPU, native MediaPipe/OpenGL, API key cloud, atau akun Dukcapil.
 
-SFace memakai ambang cosine awal 0.363. Ambang PAD, cosine, dan blur dapat diubah di UI; keputusan menggunakan konfigurasi backend. Ambang classifier gambar hanya referensi diagnostik dan tidak menentukan kelulusan KYC. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
+ArcFace R50 memakai ambang cosine demo awal 0.40. Konfigurasi lama SFace dimigrasikan sekali; kalibrasi harus menyebut model ArcFace yang sesuai. Ambang PAD, cosine, dan blur dapat diubah melalui API berotorisasi; keputusan menggunakan konfigurasi backend. Ambang classifier gambar hanya referensi diagnostik dan tidak menentukan kelulusan KYC. Probabilitas model bukan persentase kepastian identitas. Ambang belum dikalibrasi terhadap kamera, foto KTP, dan populasi pengguna Anda.
 
 Gerakan dihitung dari landmark aktual: baseline eye aspect ratio ≥0.22 lalu tertutup ≤0.19 dan ≤70% baseline; senyum menambah lebar mulut relatif ≥10% dan ≥0.06; putaran kepala mengubah posisi hidung relatif ≥0.12. Batas ini perlu diuji pada perangkat dan kondisi capture Anda.
 
@@ -128,7 +178,7 @@ Foto KTP hanya berada dalam memori sesi. Frame inferensi dan foto KYC tidak disi
 
 Database `data/workspace.sqlite3` menyimpan nama, NIK tersamarkan, hasil/skor, audit, jadwal, dan konfigurasi. Tabel `registrations` juga menyimpan nama, email, ponsel, alamat dan tujuan dari formulir pendaftaran demo; gunakan data contoh untuk pengujian mock UI. Data pendaftaran bertahan setelah restart untuk pencarian status. NIK lengkap maupun gambar tidak disimpan ke SQLite. Ekspor JSON/CSV merupakan unduhan yang dipilih operator. Lokasi database dapat diubah lewat `MOCK_ID_DATA_DIR`.
 
-Nonce final verify sekali pakai, maksimal tiga percobaan verifikasi dalam satu sesi. Pengambilan ulang setelah final verify menghitung percobaan berikutnya; penggantian capture sebelum final verify tidak menambah hitungan ini. Streaming liveness memiliki token dan maksimum tiga pemeriksaan tersendiri per percobaan verifikasi. Reset biasa tidak menghapus pembatas ini. Server memeriksa urutan frame, frame identik, kontinuitas wajah, PAD, serta transisi gerakan; bukti streaming diterbitkan server dan terikat hash selfie. Final verify menolak selfie/bukti yang diganti atau nonce yang sudah digunakan. Header `X-Capture-Revision` mengikat request klien ke generasi capture; hasil OCR/preview lama yang selesai sesudah reset ditolak. Reset ditolak sementara inferensi liveness/final verify sedang berjalan, agar hasil tidak bercampur.
+Nonce final verify sekali pakai, maksimal tiga percobaan verifikasi dalam satu sesi. Pengambilan ulang setelah final verify menghitung percobaan berikutnya; penggantian capture sebelum final verify tidak menambah hitungan ini. Streaming liveness memakai token baru setiap rekaman; sejak 3.0.1 kehilangan deteksi tidak dibatasi tiga rekaman. Batas percobaan final verify tetap berlaku. Server memeriksa urutan frame, frame identik, kontinuitas wajah, PAD, serta transisi gerakan; bukti streaming diterbitkan server dan terikat hash selfie. Final verify menolak selfie/bukti yang diganti atau nonce yang sudah digunakan. Header `X-Capture-Revision` mengikat request klien ke generasi capture; hasil OCR/preview lama yang selesai sesudah reset ditolak. Reset ditolak sementara inferensi liveness/final verify sedang berjalan, agar hasil tidak bercampur.
 
 Streaming memiliki batas 90 detik/360 frame dan minimal selang 90 ms per request sebagai pembatas resource, **bukan durasi kelulusan gerakan**. Jeda lebih dari tiga detik membatalkan baseline gerakan yang sedang berlangsung. Endpoint batch lama (`/liveness/check`) tetap didukung untuk kompatibilitas dan memiliki aturan 24–48 frame/manifest sebelumnya; UI versi 2.3 memakai `/liveness/frame`. Pemeriksaan ini belum merupakan attestation kamera; klien yang dimodifikasi masih bisa menyusun input sendiri.
 
@@ -232,7 +282,7 @@ Tes regresi kebijakan memakai fixture terpisah: PAD 97,2%, cosine 0,620 dan skor
 
 MiniFASNet diganti dengan **Swin V2-B area wajah** dari repo resmi Xianhua-He, revision `2b7e9d2f6af93e33806c11ad48f735f1c1810dad`. Checkpoint `face_swin_v2_base.pth` (SHA-256 `8c0fb53641e42fe0f2a0082ac9b197ffab6d34d9de6eca354d3fa47fe0692ffc`) dikonversi menjadi ONNX FP32/opset 17, berukuran sekitar **335 MiB**. Bobot general-scenario area wajah dipakai; bukan checkpoint full-image atau model protokol kompetisi ResNet. Tidak ada fallback diam-diam ke MiniFASNet.
 
-Preprocessing memakai ROI wajah dengan margin 20 px yang dibatasi bingkai, resize linear 224×224, BGR→RGB dan normalisasi ImageNet mean `[.485,.456,.406]`/std `[.229,.224,.225]`. Tidak dilakukan SFace alignment untuk PAD. Model menghasilkan dua logits: **live=0, spoof=1**, berbeda dari indeks live MiniFASNet sebelumnya. Backend mengembalikan dua probabilitas, label kelas, nama checkpoint, revisi sumber dan runtime ONNX/CPU pada semua pemeriksaan PAD. Swin dipakai di preview, streaming gerakan dan final verify. SFace tetap untuk pencocokan wajah; ViT generic tetap diagnostik seperti versi 2.4.2.
+Preprocessing memakai ROI wajah dengan margin 20 px yang dibatasi bingkai, resize linear 224×224, BGR→RGB dan normalisasi ImageNet mean `[.485,.456,.406]`/std `[.229,.224,.225]`. Tidak dilakukan ArcFace alignment untuk PAD. Model menghasilkan dua logits: **live=0, spoof=1**, berbeda dari indeks live MiniFASNet sebelumnya. Backend mengembalikan dua probabilitas, label kelas, nama checkpoint, revisi sumber dan runtime ONNX/CPU pada semua pemeriksaan PAD. Swin dipakai di preview, streaming gerakan dan final verify. ArcFace R50 digunakan untuk pencocokan wajah; ViT generic tetap diagnostik seperti versi 2.4.2.
 
 Ekspor dimuat dengan restricted unpickler (`weights_only=True`), state dictionary harus cocok penuh (`strict=True`). Arsitektur upstream disertakan hanya untuk reproduksi ekspor; perubahan terbatas pada helper inference dan konstanta CUDA agar berjalan di CPU. Laporan `app/model/swin-pad-export.json` mencatat parity logits maksimal sekitar **0,000003** pada tiga variasi fixture publik. Benchmark `app/model/swin-pad-benchmark.json` pada Mac arm64, dua thread CPU: median PAD **0,214 detik**, peak proses setelah seluruh model dimuat dan PAD dijalankan **994 MiB**. Angka tersebut bukan waktu total alur kamera atau jaminan penggunaan RAM; frame/capture dan browser menambah kebutuhan memori. Runtime tidak memerlukan PyTorch atau GPU.
 
@@ -261,7 +311,7 @@ Tes memeriksa input RGB/normalisasi, indeks kelas, inference CPU nyata, penolaka
 
 ## Pembaruan 2.6 — CoreML untuk Mac Apple Silicon
 
-Swin V2 anti-spoof kini memilih `CoreMLExecutionProvider` otomatis ketika Python berjalan sebagai `arm64` di macOS dan provider tersedia. Model ONNX/bobot tetap sama. CoreML memakai **NeuralNetwork**, `MLComputeUnits=ALL`, input statis dan fallback operasi ke CPU. Konfigurasi MLProgram gagal memuat graph Swin pada pengujian lokal, sehingga tidak digunakan. OCR, SFace/YuNet, landmark, tangan, FaceAttrib dan classifier diagnostik tetap memakai CPU; ini adalah pipeline hybrid, bukan pemindahan seluruh aplikasi ke GPU.
+Swin V2 anti-spoof kini memilih `CoreMLExecutionProvider` otomatis ketika Python berjalan sebagai `arm64` di macOS dan provider tersedia. Model ONNX/bobot tetap sama. CoreML memakai **NeuralNetwork**, `MLComputeUnits=ALL`, input statis dan fallback operasi ke CPU. Konfigurasi MLProgram gagal memuat graph Swin pada pengujian lokal, sehingga tidak digunakan. OCR, ArcFace R50/YuNet, landmark, tangan, FaceAttrib dan classifier diagnostik tetap memakai CPU; ini adalah pipeline hybrid, bukan pemindahan seluruh aplikasi ke GPU.
 
 ONNX Runtime 1.23.2 yang sudah dipasang menyediakan CoreML EP di Mac ini. Tidak perlu memasang CUDA, PyTorch runtime, atau mengunduh model baru. Python yang berjalan melalui Rosetta/x86_64 akan memakai CPU. CoreML menentukan penempatan operasi pada CPU/GPU/Neural Engine; daftar provider tidak membuktikan perangkat fisik yang dipakai. Lihat [dokumentasi resmi CoreML EP](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html).
 

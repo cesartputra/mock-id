@@ -23,7 +23,10 @@ def real_models(tmp_path_factory):
 @pytest.fixture
 def client(tmp_path):
     with TestClient(create_app(tmp_path)) as c:
-        c.headers.update({'X-Local-Client': 'mock-id'})
+        principal=c.app.state.auth.create_user('fixture-admin','test-password-12345','admin')
+        token,_=c.app.state.auth.login('fixture-admin','test-password-12345')
+        c.headers.update({'X-Local-Client': 'mock-id','Authorization':'Bearer '+token})
+        c.fixture_actor=principal
         yield c
 
 @pytest.fixture(scope='session')

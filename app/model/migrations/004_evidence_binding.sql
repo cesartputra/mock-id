@@ -1,0 +1,1 @@
+ALTER TABLE evidence ADD COLUMN binding_version INTEGER NOT NULL DEFAULT 1;

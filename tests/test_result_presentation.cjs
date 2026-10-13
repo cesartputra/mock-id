@@ -67,3 +67,42 @@ test("a real core failure remains visible in applicant results", () => {
   assert.match(html, /Belum terpenuhi/);
   assert.match(html, /Risiko foto\/layar/);
 });
+
+test("mock Dukcapil pass is labelled simulation rather than official verification", () => {
+  const html = context.checkRows({
+    checks: [{ name: "Dukcapil", status: "passed", mode: "mock" }],
+  });
+  assert.match(html, /MOCK · lolos simulasi/);
+  assert.doesNotMatch(html, /MOCK · belum diverifikasi|Terpenuhi/);
+});
+
+test("persistent applicant result displays demo Dukcapil pass with manual decision intact", () => {
+  const workflow = fs.readFileSync("app/view/static/workflow-ui.js", "utf8");
+  const panelContext = vm.createContext({
+    esc: String,
+    stateLabels: { MANUAL_PENDING: "Pemeriksaan manual diperlukan" },
+    approvedStates: [],
+    principal: null,
+    flow: null,
+    page: "result",
+  });
+  vm.runInContext(
+    workflow.slice(
+      workflow.indexOf("function applicationPanel("),
+      workflow.indexOf("function deliveryView("),
+    ),
+    panelContext,
+  );
+  const html = panelContext.applicationPanel({
+    id: "APP-PROTOCOL",
+    state: "MANUAL_PENDING",
+    identity_demo_passed: true,
+    identity_verified: false,
+  });
+  assert.match(html, /MOCK · lolos simulasi/);
+  assert.match(html, /Pemeriksaan manual diperlukan/);
+  assert.doesNotMatch(
+    html,
+    /terverifikasi oleh prosedur berwenang|Unduh ulang PDF/,
+  );
+});

@@ -15,7 +15,16 @@ if (!/^\d+$/.test(port) || Number(port) < 1024 || Number(port) > 65535) {
 }
 const child = spawn(
   venvPython,
-  ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port],
+  [
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    port,
+    "--no-access-log",
+  ],
   {
     cwd: root,
     stdio: "inherit",

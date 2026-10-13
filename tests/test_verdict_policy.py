@@ -56,14 +56,14 @@ def test_high_fake_score_preserves_valid_kyc_and_registration_handoff(client, po
     assert client.app.state.repository.result(result['id']) == result
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
     response = client.post('/api/registrations', json=body)
-    assert response.status_code == 200 and response.json()['kyc'] == 'local_checks_passed'
+    assert response.status_code == 409  # Raw pass has no persistent application approval.
     # Changing a diagnostic threshold cannot turn valid captures into attacks.
     client.app.state.repository.set_settings({**result['rules'], 'deepfake_risk': .01})
     assert run()['status'] == 'pass'
 
 
 @pytest.mark.parametrize('field,value,status', [
-    ('pad', .20, 'attack'), ('face', .1, 'manual'), ('same_face', .1, 'manual'),
+    ('pad', .20, 'manual'), ('face', .1, 'manual'), ('same_face', .1, 'manual'),
     ('nik_matches', False, 'manual'), ('visible', False, 'capture'),
     ('hand', False, 'capture'), ('live', False, 'capture'), ('continuity', .1, 'manual'),
 ])
@@ -73,7 +73,8 @@ def test_core_controls_still_block_invalid_capture_with_high_classifier_score(cl
     result = run()
     assert result['status'] == status
     if field == 'pad':
-        assert 'anti-spoof / PAD' in result['reason']
+        assert 'anti-spoof' in result['reason'] and result['pad_review_required']
+        assert next(c for c in result['checks'] if c['name']=='Anti-spoof / PAD')['status']=='failed'
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
     assert client.post('/api/registrations', json=body).status_code == 409
 
@@ -85,3 +86,163 @@ def test_advisory_classifier_exception_does_not_invalidate_core_checks(policy_ca
     assert result['status'] == 'pass' and 'deepfake' not in result['scores']
     diagnostic = next(c for c in result['checks'] if c.get('effect') == 'advisory')
     assert diagnostic['status'] == 'unavailable'
+
+
+def test_strict_pad_policy_still_rejects_low_scores(client, policy_case):
+    state, run, _session = policy_case
+    client.app.state.verifier.pad_review_enabled = False
+    state['pad'] = .2
+    result = run()
+    assert result['status'] == 'attack' and not result['pad_review_required']
+
+
+def test_pad_uncertainty_does_not_hide_failed_motion(policy_case):
+    state, run, _session = policy_case
+    state.update(pad=.2, live=False)
+    result = run()
+    assert result['status']=='capture' and not result['pad_review_required']
+
+
+def test_uncertain_pad_takes_today_quota_but_never_issues_without_review(client, face_image, policy_case):
+    from test_workflow import service_day
+    state, run, session = policy_case
+    session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
+    session.proof_checked_revision = session.revision
+    session.liveness_selfie = 'protocol-fixture-binding'
+    workflow = client.app.state.workflow
+    workflow.attest(session.application_id, client.fixture_actor, True)
+    state['pad'] = .001
+    state['face'] = .2
+    result = run()
+    routed = workflow.ingest(session,result,face_image,face_image,[face_image])
+    assert routed['routing']['routing_score'] < 50
+    assert routed['state']=='MANUAL_PENDING'
+    with workflow.repository.connect() as con:
+        stored=workflow.get(con,routed['id'])['payload']['routing']
+    assert stored['mandatory']['document_face_liveness_pad'] is False
+    assert not stored['security_review']
+    assert client.get('/api/applications/'+routed['id']+'/slik.pdf').status_code==409
+    service_day(client)
+    reserved = client.app.state.manual.admit_today(routed['id'],client.fixture_actor)
+    assert reserved['state']=='MANUAL_SCHEDULED'
+    assert client.get('/api/applications/'+routed['id']+'/slik.pdf').status_code==409
+
+
+def test_holding_pad_is_also_required_before_automatic_approval(client, policy_case):
+    state, run, _session = policy_case
+    calls=[]
+    def score(image,face):
+        calls.append(image)
+        return {'live_probability':.98 if len(calls)%2 else .01,'mode':'protocol fixture'}
+    client.app.state.verifier.pad.score = score
+    result = run()
+    assert len(calls)==2
+    assert result['status']=='manual' and result['pad_review_required']
+    assert result['scores']['liveness']==.01
+
+
+def test_production_service_keeps_strict_pad_policy(client, monkeypatch):
+    from app.services.pipeline import VerificationService
+    monkeypatch.setenv('MOCK_ID_MODE','production')
+    verifier=VerificationService(client.app.state.repository)
+    assert not verifier.pad_review_enabled
+
+
+def test_uncertain_pad_route_requires_explicit_server_eligibility_and_valid_proof():
+    from app.services.score_policy import ScorePolicy, REQUIRED_CONTROLS
+    policy=ScorePolicy()
+    result={'status':'manual','pad_review_required':True,'scores':{'face_cosine':.62,'kyc_face_cosine':.93,'liveness':.001,'ocr':.98}}
+    controls={key:True for key in REQUIRED_CONTROLS}
+    controls['document_face_liveness_pad']=False
+    assert policy.route(result,controls)['decision']=='MANUAL_PENDING'
+    assert policy.route(result,{**controls,'session_nonce_proof':False})['decision']=='MANUAL_PENDING'
+    policy.mode='production'
+    assert policy.route(result,controls)['decision']=='REJECTED'
+    policy.mode='demo'
+    policy.calibrator.calibrated=True
+    assert policy.route(result,controls)['decision']=='REJECTED'
+
+
+def test_mock_dukcapil_pass_is_persisted_and_reset_without_changing_official_identity(client, face_image, policy_case):
+    state,run,session=policy_case
+    session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
+    session.proof_checked_revision=session.revision
+    session.liveness_selfie='protocol-fixture-binding'
+    workflow=client.app.state.workflow
+    workflow.attest(session.application_id,client.fixture_actor,True)
+    result=run()
+    dukcapil=next(c for c in result['checks'] if c['name']=='Dukcapil')
+    assert dukcapil['status']=='passed' and dukcapil['mode']=='mock'
+    assert result['identity_demo_passed'] and not result['identity_verified']
+    routed=workflow.ingest(session,result,face_image,face_image,[face_image])
+    assert routed['state']=='AUTO_APPROVED' and routed['identity_demo_passed']
+    assert workflow.snapshot(routed['id'],client.fixture_actor)['identity_demo_passed']
+    workflow.invalidate(routed['id'],client.fixture_actor,session.revision+1)
+    assert not workflow.snapshot(routed['id'],client.fixture_actor)['identity_demo_passed']
+
+
+def test_mock_dukcapil_pass_does_not_approve_uncertain_pad(policy_case):
+    state,run,_session=policy_case
+    state['pad']=.01
+    result=run()
+    assert result['identity_demo_passed'] and result['pad_review_required']
+    assert result['status']=='manual'
+
+
+def test_demo50_accepts_numeric_pad_uncertainty_and_issues_identity_bound_pdf(client, face_image, policy_case):
+    state,run,session=policy_case
+    session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
+    session.proof_checked_revision=session.revision
+    session.liveness_selfie='protocol-fixture-binding'
+    workflow=client.app.state.workflow
+    workflow.attest(session.application_id,client.fixture_actor,True)
+    state['pad']=.001
+    result=run()
+    assert result['status']=='manual'
+    routed=workflow.ingest(session,result,face_image,face_image,[face_image])
+    assert 50<=routed['routing']['routing_score']<75
+    assert routed['state']=='AUTO_APPROVED' and routed['routing']['demo_model_override']
+    with workflow.repository.connect() as con:
+        stored=workflow.get(con,routed['id'])['payload']['routing']
+    assert stored['mandatory']['document_face_liveness_pad'] is False
+    issued=client.app.state.slik.issue(routed['id'],client.fixture_actor)
+    assert issued['state']=='SLIK_READY'
+    response=client.get('/api/applications/'+routed['id']+'/slik.pdf')
+    assert response.status_code==200 and response.content.startswith(b'%PDF')
+    from io import BytesIO
+    from pypdf import PdfReader
+    text='\n'.join(p.extract_text() for p in PdfReader(BytesIO(response.content)).pages)
+    assert 'PEMOHON TEST' in text and '1234567890123456' in text
+
+
+@pytest.mark.parametrize('field,value', [('nik_matches',False),('visible',False),('hand',False),('live',False)])
+def test_demo50_cannot_issue_for_failed_identity_or_capture(client,face_image,policy_case,field,value):
+    state,run,session=policy_case
+    session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
+    session.proof_checked_revision=session.revision
+    workflow=client.app.state.workflow
+    workflow.attest(session.application_id,client.fixture_actor,True)
+    state[field]=value
+    result=run()
+    routed=workflow.ingest(session,result,face_image,face_image,[face_image])
+    assert routed['state'] not in ['AUTO_APPROVED','SLIK_READY']
+    assert client.post('/api/applications/'+routed['id']+'/slik').status_code==409
+
+
+@pytest.mark.parametrize('score,decision',[(49.999,'MANUAL_PENDING'),(50,'AUTO_APPROVED'),(50.001,'AUTO_APPROVED')])
+def test_demo50_boundary_and_original_failed_controls(monkeypatch,score,decision):
+    from app.services.score_policy import ScorePolicy, REQUIRED_CONTROLS
+    policy=ScorePolicy()
+    monkeypatch.setattr(policy.calibrator,'score',lambda _:(score,{}))
+    result={'status':'manual','scores':{},'demo_score_eligible':True}
+    controls={k:True for k in REQUIRED_CONTROLS}
+    controls.update(document_face_liveness_pad=False,approved_identity_procedure=False)
+    routed=policy.route(result,controls)
+    assert routed['decision']==decision and routed['automatic_threshold']==50
+    assert routed['mandatory']['document_face_liveness_pad'] is False
+    for key in ['session_nonce_proof','document_identity_complete','applicant_authority']:
+        assert policy.route(result,{**controls,key:False})['decision']!='AUTO_APPROVED'
+    policy.mode='production'
+    assert policy.route(result,controls)['decision']!='AUTO_APPROVED'
+    policy.mode='demo';policy.calibrator.calibrated=True
+    assert policy.route(result,controls)['decision']!='AUTO_APPROVED'

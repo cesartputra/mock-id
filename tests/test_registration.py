@@ -10,26 +10,14 @@ def payload(kind='individual', preview=False):
 def test_post_kyc_registration_rejects_unverified_or_reset_capture(client, face_image):
     body = payload()
     assert client.post('/api/registrations', json=body).status_code == 422
-    session = client.app.state.sessions.create()
+    session = client.app.state.sessions.create(owner_id=client.fixture_actor['id'])
     session.document = face_image
     session.document_result = {'fields': {'nik': '1234567890123456'}}
-    session.last_result = {'id': 'TEST-PASS', 'status': 'capture'}
+    session.last_result = {'id':'TEST-PASS','status':'pass'}
     session.consumed = True
-    body.update(session_id=session.id, verification_id='TEST-PASS')
-    assert client.post('/api/registrations', json=body).status_code == 409
-    # Protocol-only result fixture exercises handoff policy, not face inference.
-    session.last_result['status'] = 'pass'
-    result = client.post('/api/registrations', json=body)
-    assert result.status_code == 200, result.text
-    record = result.json()
-    assert record['kyc'] == 'local_checks_passed' and record['mode'] == 'mock'
-    assert not record['identity_verified'] and not record['submitted_to_ojk']
-    assert client.post('/api/registrations', json=body).json()['id'] == record['id']
-    reset = client.post(f'/api/sessions/{session.id}/retake', json={'stage': 'document', 'nonce': session.nonce})
-    assert reset.status_code == 200
-    assert client.post('/api/registrations', json=body).status_code == 409
-    # Existing historical mock receipt is still accessible after retake.
-    assert client.get(f'/api/registrations/{record["id"]}').json() == record
+    body.update(session_id=session.id,verification_id='TEST-PASS')
+    # An in-memory pass alone can no longer authorize the host handoff.
+    assert client.post('/api/registrations',json=body).status_code==409
 
 
 def test_preview_receipt_never_fabricates_pass_and_survives_restart(client):

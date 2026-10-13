@@ -318,3 +318,103 @@ def test_real_face_capture_failure_identifies_correct_retry_stage(real_models, f
     assert result['status'] == 'capture' and result['retry']['stage'] == bad_stage
     assert result['checks'][-2]['stage'] == bad_stage
     assert result['checks'][-2]['detail']['message'] == result['reason']
+
+
+def test_detection_retries_do_not_use_three_recordings_budget(client, face_image):
+    public, session = seed_session(client, face_image)
+    previous_nonce = None
+    for _ in range(8):
+        started = client.post(f'/api/sessions/{session.id}/liveness/start')
+        assert started.status_code == 200, started.text
+        nonce=started.json()['capture_nonce']
+        assert nonce != previous_nonce
+        assert session.liveness_proof is None
+        if previous_nonce:
+            old=client.post(f'/api/sessions/{session.id}/liveness/frame',data={'capture_nonce':previous_nonce,'seq':0},files={'image':('frame.jpg',encoded(face_image),'image/jpeg')})
+            assert old.status_code==409
+        previous_nonce=nonce
+        reset=client.post(f'/api/sessions/{session.id}/retake',json={'stage':'liveness','nonce':session.nonce})
+        assert reset.status_code==200,reset.text
+        assert session.attempt==1 and session.document is not None
+    assert session.retake_attempts.get('liveness',0)==0
+
+
+def test_brief_detector_gap_pauses_evidence_without_resetting_baseline():
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    baseline=capture.gestures.baseline
+    capture.gestures.hits=1
+    capture.pause_detection(now=10)
+    assert capture.gestures.baseline==baseline
+    assert capture.gestures.hits==0
+    assert not capture.result({'ready':False,'warnings':[]})['passed']
+    capture.pause_detection(now=10.3)
+    assert capture.gestures.baseline==baseline
+    capture.pause_detection(now=10.4)
+    assert capture.gestures.baseline is None
+    assert not capture.gestures.completed
+
+
+def test_prolonged_detector_gap_requires_fresh_neutral_evidence():
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    capture.pause_detection(now=10)
+    capture.pause_detection(now=11.1)
+    assert capture.gestures.baseline is None
+    capture.resume_detection()
+    assert capture.detection_missing_since is None and capture.detection_misses==0
+
+
+def test_mask_and_spoof_still_reset_gesture_after_soft_gap(client, monkeypatch):
+    capture=LiveCapture(['blink','turn','smile'])
+    neutral(capture.gestures)
+    verifier=client.app.state.verifier
+    # Detector outputs isolate state transitions, not model accuracy.
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'mask','message':'Masker'}]})
+    result=verifier.inspect_liveness_frame(capture,None,'x',0)
+    assert capture.gestures.baseline is None and not result['passed']
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'spoof_risk','message':'Spoof'}]})
+    first=verifier.inspect_liveness_frame(capture,None,'y',1)
+    second=verifier.inspect_liveness_frame(capture,None,'z',2)
+    assert not first['done'] and second['done'] and not second['passed']
+
+
+def test_demo_preview_pad_uncertainty_keeps_face_quality_separate(client, monkeypatch):
+    from types import SimpleNamespace
+    verifier=client.app.state.verifier
+    verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':True,'face_box':[20,20,100,100],'warnings':[]})
+    verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
+    verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
+    result=verifier.inspect_capture(None)
+    assert result['ready'] and result['pad_review_required']
+    assert result['warnings'][0]['code']=='pad_review'
+    verifier.pad_review_enabled=False
+    strict=verifier.inspect_capture(None)
+    assert not strict['ready'] and strict['warnings'][0]['code']=='spoof_risk'
+
+
+def test_demo_preview_pad_review_never_overrides_mask(client):
+    from types import SimpleNamespace
+    verifier=client.app.state.verifier
+    verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':False,'face_box':[20,20,100,100],'warnings':[{'code':'mask','message':'Lepaskan masker'}]})
+    verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
+    verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
+    result=verifier.inspect_capture(None)
+    assert not result['ready'] and result['pad_review_required']
+    assert result['warnings'][0]['code']=='mask'
+
+
+def test_completed_motion_with_uncertain_pad_is_review_only_not_strict_proof():
+    capture=LiveCapture(['blink'])
+    capture.rules={'pad_probability':.8}
+    capture.pad_min=.01
+    neutral(capture.gestures)
+    capture.gestures.update(metrics(blink=.13))
+    capture.gestures.update(metrics())
+    capture.gestures.update(metrics())
+    result=capture.result({'ready':True})
+    assert result['done'] and not result['passed'] and not result['pad_passed']
+    capture.pad_review_enabled=True
+    review=capture.result({'ready':True})
+    assert review['done'] and review['passed'] and review['pad_review_required']
+    assert not review['pad_passed'] and review['live']['passed']

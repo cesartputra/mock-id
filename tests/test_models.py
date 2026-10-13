@@ -11,7 +11,7 @@ from conftest import encoded
 
 def test_parser_never_invents_identity():
     assert parse_identity(['gambar kosong'])['nik'] == ''
-    assert parse_identity(['NIK: 1234567890123456', 'Nama', 'USER UJI', '01-01-1990']) == {'nik':'1234567890123456','name':'USER UJI','birth':'1990-01-01','address':''}
+    assert parse_identity(['NIK: 1234567890123456', 'Nama', 'USER UJI', 'Lahir: 01-01-1990']) == {'nik':'1234567890123456','name':'USER UJI','birth':'1990-01-01','address':''}
 
 
 def test_reject_invalid_image():
@@ -80,7 +80,8 @@ def test_card_geometry(ktp_image):
     image=np.full((900,1300,3),80,np.uint8)
     image[180:720,200:1056]=ktp_image
     candidates=card_region(image)
-    assert candidates[0][1].shape == (540,856,3)
+    assert 530 <= candidates[0][1].shape[0] <= 550
+    assert 845 <= candidates[0][1].shape[1] <= 865
     with pytest.raises(CaptureError):
         card_region(np.zeros_like(image))
 

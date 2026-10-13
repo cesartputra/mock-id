@@ -55,16 +55,29 @@ class AntiSpoofService:
         self.input = model_input.name
 
     def score(self, image, face):
-        logits = self.model.run(None, {self.input: face_tensor(image, face)})[0]
+        return self.score_tensor(face_tensor(image,face))
+
+    def score_tensor(self,tensor):
+        if tensor.shape!=(1,3,224,224) or tensor.dtype!=np.float32 or not np.isfinite(tensor).all(): raise ValueError('Tensor PAD tidak valid.')
+        logits = self.model.run(None, {self.input: tensor})[0]
         probs = softmax(logits)
         if len(probs) != 2:
             raise ValueError('Model anti-spoof harus memiliki dua kelas.')
         # Official CVPR checkpoint labels are LIVE=0, SPOOF=1. MiniFASNet's
         # previous live index was 1 and must not be reused for this model.
-        return {'live_probability': round(float(probs[0]), 5),
-                'spoof_probability': round(float(probs[1]), 5),
+        return {'live_probability': float(probs[0]),
+                'spoof_probability': float(probs[1]),
                 'class_probabilities': probs.tolist(), 'class_labels': ['live', 'spoof'],
                 'model': PAD_MODEL, 'checkpoint': 'face_swin_v2_base.pth',
                 'source_revision': PAD_REVISION, 'runtime': self.model.status['runtime'],
                 'runtime_details': dict(self.model.status), 'mode': 'real',
                 'scope': 'Model PAD physical/digital; skor dan ambang belum dikalibrasi untuk kamera KYC lokal.'}
+
+
+def create_pad_service():
+    import os
+    url=os.getenv('MOCK_ID_PAD_WORKER_URL')
+    if url:
+        from app.services.tier2_remote import RemoteAntiSpoofService
+        return RemoteAntiSpoofService(url,os.getenv('MOCK_ID_WORKER_TOKEN'))
+    return AntiSpoofService()

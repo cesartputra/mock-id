@@ -124,24 +124,31 @@ def test_settings_and_review_validation(client):
     assert DukcapilService().check({'nik':'1234567890123456'})['identity_verified'] is False
 
 
+def test_dukcapil_demo_pass_does_not_enable_official_production_adapter(monkeypatch):
+    monkeypatch.setenv('MOCK_ID_MODE','demo')
+    demo=DukcapilService().check({'nik':'1234567890123456'})
+    assert demo['status']=='passed' and demo['simulated'] and demo['identity_demo_passed']
+    assert not demo['identity_verified']
+    monkeypatch.setenv('MOCK_ID_MODE','production')
+    production=DukcapilService().check({'nik':'1234567890123456'})
+    assert production['status']=='pending' and not production['source_available']
+    assert not production['identity_verified'] and not production.get('identity_demo_passed')
+
+
 def test_swagger_header_scheme(client):
     spec=client.get('/openapi.json').json()
     assert spec['components']['securitySchemes']['APIKeyHeader']['name']=='X-Local-Client'
 
 
-def test_manual_schedule_and_review_persist(client):
+def test_legacy_review_and_schedule_cannot_bypass_case_and_evidence(client):
     from datetime import datetime,timedelta,timezone
     repo=client.app.state.repository
     fixture={'id':'TEST-MANUAL','created':datetime.now(timezone.utc).isoformat(),'status':'manual','identity_verified':False}
     repo.save_result(fixture)
     at=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
-    response=client.post('/api/records/TEST-MANUAL/schedule',json={'at':at})
-    assert response.status_code==200 and response.json()['status']=='scheduled'
-    response=client.post('/api/records/TEST-MANUAL/review',json={'decision':'approved','note':'Catatan unit test'})
-    assert response.status_code==200 and response.json()['status']=='approved'
-    assert response.json()['identity_verified'] is False
-    assert client.post('/api/records/TEST-MANUAL/review',json={'decision':'rejected','note':'Ganti keputusan'}).status_code==409
-    assert repo.result('TEST-MANUAL')['note']=='Catatan unit test'
+    assert client.post('/api/records/TEST-MANUAL/schedule',json={'at':at}).status_code==409
+    assert client.post('/api/records/TEST-MANUAL/review',json={'decision':'approved','note':'Catatan unit test'}).status_code==409
+    assert repo.result('TEST-MANUAL')['status']=='manual'
 
 
 def test_settings_persist_and_audit(client):
@@ -200,4 +207,7 @@ def test_liveness_capture_tokens_and_real_static_rejection(client,real_models,fa
     second=client.post(f'/api/sessions/{s["id"]}/liveness/start').json()
     assert second['capture_nonce']!=capture['capture_nonce']
     client.post(f'/api/sessions/{s["id"]}/liveness/start')
-    assert client.post(f'/api/sessions/{s["id"]}/liveness/start').status_code==429
+    fourth=client.post(f'/api/sessions/{s["id"]}/liveness/start')
+    assert fourth.status_code==200
+    assert fourth.json()['capture_nonce']!=second['capture_nonce']
+    assert not session.liveness_proof and not session.consumed

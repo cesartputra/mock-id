@@ -1,0 +1,2 @@
+ALTER TABLE issuance ADD COLUMN lease_until REAL NOT NULL DEFAULT 0;
+ALTER TABLE issuance ADD COLUMN lease_token TEXT;

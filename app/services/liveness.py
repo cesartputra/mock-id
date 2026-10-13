@@ -114,6 +114,8 @@ class LiveCapture:
         self.selfie_seq = None
         self.pad_min = 1.0
         self.pad_samples = []
+        self.pad_box_history = []
+        self.pad_geometry = []
         self.pad_review_enabled = False
         self.cosine_min = 1.0
         self.spoof_strikes = 0
@@ -144,6 +146,7 @@ class LiveCapture:
         if self.detection_missing_since is None:
             self.detection_missing_since = now
         self.detection_misses += 1
+        self.pad_box_history = []
         self.gestures.hits = 0  # Consecutive positive samples must remain real.
         if self.detection_misses > 2 or now - self.detection_missing_since > 1.0:
             self.gestures.reset_action()
@@ -152,18 +155,44 @@ class LiveCapture:
         self.detection_missing_since = None
         self.detection_misses = 0
 
-    def record_pad(self, probability):
+    def stabilize_pad_face(self, face):
+        """Median three nearby detector boxes, based only on geometry.
+
+        Real movement, scale change or any missing face resets the history.
+        No previous face may substitute for a detector miss; no score is used
+        to pick a crop. Landmarks and recognition still use the current face.
+        """
+        box = [float(v) for v in face[:4]]
+        if self.pad_box_history:
+            previous = self.pad_box_history[-1]
+            px, py, pw, ph = previous
+            x, y, w, h = box
+            nearby = (abs((x+w/2)-(px+pw/2)) <= .04*pw
+                      and abs((y+h/2)-(py+ph/2)) <= .04*ph
+                      and abs(w-pw) <= .08*pw and abs(h-ph) <= .08*ph)
+            if not nearby:
+                self.pad_box_history = []
+        self.pad_box_history.append(box)
+        self.pad_box_history = self.pad_box_history[-3:]
+        stabilized = face.copy()
+        stabilized[:4] = [statistics.median(b[i] for b in self.pad_box_history) for i in range(4)]
+        return stabilized
+
+    def record_pad(self, probability, geometry=None):
         # Validate before mutating the session; samples are bounded by MAX_FRAMES.
         summarize_pad([probability], (self.rules or {}).get('pad_probability', .8))
         if len(self.pad_samples) >= self.MAX_FRAMES:
             raise ValueError('Batas sampel PAD tercapai.')
         self.pad_samples.append(probability)
+        self.pad_geometry.append(geometry)
         self.pad_min = min(self.pad_min, probability)
 
     def result(self, feedback, metrics=None):
         threshold = (self.rules or {}).get('pad_probability', .8)
         summary = summarize_pad(self.pad_samples or [self.pad_min], threshold,
                                 demo=self.pad_review_enabled)
+        summary['geometry_profile'] = 'nearby-box-median3-v1'
+        summary['geometry'] = list(self.pad_geometry)
         if self.pad_review_enabled and summary['passed'] and self.pad_samples:
             # One low preview frame must not keep a historical warning alive.
             feedback = {**feedback, 'warnings': [w for w in feedback.get('warnings', [])

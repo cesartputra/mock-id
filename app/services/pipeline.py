@@ -77,7 +77,7 @@ class VerificationService:
             self.ocr.load()
             self.face, self.pad, self.deepfake, self.landmarks, self.visibility = face, pad, deepfake, landmarks, visibility
 
-    def inspect_capture(self, image, holding=False):
+    def inspect_capture(self, image, holding=False, capture=None):
         # Nonblocking lock: preview must not queue behind a full verification.
         if not self.lock.acquire(blocking=False):
             return {'ready':False,'warnings':[{'code':'inference_busy','message':'Model sedang memproses capture lain. Tunggu pemeriksaan kamera berikutnya.'}],'mode':'real'}
@@ -94,7 +94,13 @@ class VerificationService:
             if result.get("face_box") is not None:
                 self.pad=self.pad or create_pad_service()
                 face=self.face.faces(image)[0]
-                pad=self.pad.score(image,face)
+                pad_face = capture.stabilize_pad_face(face) if capture is not None and result['ready'] else face
+                if capture is not None and not result['ready']:
+                    capture.pad_box_history = []
+                pad=self.pad.score(image,pad_face)
+                pad['geometry'] = {'raw_box': [float(v) for v in face[:4]],
+                                   'pad_box': [float(v) for v in pad_face[:4]],
+                                   'profile': 'nearby-box-median3-v1' if capture is not None else 'current_detection'}
                 result['pad']=pad
                 if (
                     pad["live_probability"]
@@ -174,7 +180,7 @@ class VerificationService:
 
     def inspect_liveness_frame(self, capture, image, digest, seq):
         with self.lock:
-            feedback = self.inspect_capture(image)
+            feedback = self.inspect_capture(image, capture=capture)
             capture.rules = self.repository.settings()
             capture.pad_review_enabled = self.pad_review_enabled
             if not feedback['ready']:
@@ -210,7 +216,7 @@ class VerificationService:
                 result.update(done=True, passed=False, reason='Wajah pada rekaman berubah atau tidak konsisten. Rekam ulang dengan satu pemohon.')
                 return result
             capture.cosine_min = min(capture.cosine_min, cosine)
-            capture.record_pad(feedback['pad']['live_probability'])
+            capture.record_pad(feedback['pad']['live_probability'], feedback['pad'].get('geometry'))
             before = len(capture.gestures.completed)
             capture.gestures.update(metrics)
             if len(capture.gestures.completed) > before:
@@ -311,6 +317,7 @@ class VerificationService:
                 scores['ocr'] = session.document_result['confidence']
                 stage = "liveness"
                 q = quality(selfie)
+                add('Kualitas capture', q['blur'] >= rules['blur_min'] and 35 < q['brightness'] < 235, q)
                 if q['blur'] < rules['blur_min'] or not 35 < q['brightness'] < 235:
                     raise CaptureError('Selfie terlalu buram, gelap, atau silau.')
                 for label,image in [('Selfie',selfie),('Foto KYC',holding)]:
@@ -343,10 +350,10 @@ class VerificationService:
                     continuity = proof['continuity']
                     # Bound stream evidence already has a server-owned summary.
                     # Do not reintroduce its raw minimum into the demo median.
-                    pad_score = min(proof['pad_probability'], selfie_pad['live_probability'])
+                    pad_score = proof['pad_probability'] if self.pad_review_enabled and proof.get('pad_summary', {}).get('sample_count', 0) >= 3 else min(proof['pad_probability'], selfie_pad['live_probability'])
                     stream_min = proof.get('pad_summary', {}).get('minimum', proof['pad_probability'])
                     raw_min = min(stream_min, selfie_pad['live_probability'], held_pad['live_probability'])
-                    aggregation = ('stream_median_and_selfie_demo' if proof.get('pad_summary', {}).get('aggregation') == 'temporal_median_demo' else 'stream_minimum_and_selfie_demo') if self.pad_review_enabled else 'minimum'
+                    aggregation = ('stream_median_demo' if proof.get('pad_summary', {}).get('aggregation') == 'temporal_median_demo' else 'stream_minimum_and_selfie_demo') if self.pad_review_enabled else 'minimum'
                     stream_summary = proof.get('pad_summary')
                 else:
                     live = self.landmarks.challenges(frames, manifest, session.challenges)
@@ -369,12 +376,13 @@ class VerificationService:
                 pad_detail = {'samples': pad_scores, 'recording': stream_summary,
                               'score': pad_score, 'minimum_live_probability': raw_min,
                               'holding': held_pad, 'aggregation': aggregation,
-                              'scope': 'liveness_recording_and_selfie' if self.pad_review_enabled else 'all_captures',
+                              'scope': 'liveness_recording' if self.pad_review_enabled else 'all_captures',
                               'threshold': rules['pad_probability']}
-                if self.pad_review_enabled:
-                    checks.append({'name': 'PAD foto memegang KTP (diagnostik)', 'status': 'informational',
-                                   'effect': 'advisory', 'mode': 'real', 'stage': 'holding',
-                                   'detail': {'sample': held_pad, 'message': 'Skor foto memegang KTP dipisahkan dari rekaman liveness pada demo. Tidak membuktikan keaslian fisik kartu.'}})
+                stage = 'holding'
+                add('PAD foto memegang KTP', held_pad['live_probability'] >= rules['pad_probability'],
+                    {'sample': held_pad, 'threshold': rules['pad_probability'],
+                     'message': 'PAD foto memegang KTP merupakan kontrol terpisah yang memerlukan tinjauan bila rendah; bukan pemeriksaan bahan kartu.'})
+                stage = 'liveness'
                 add('Tantangan liveness', live['passed'], live)
                 same_face = min(continuity) >= rules["face_cosine"]
                 add('Kontinuitas wajah capture', same_face, {'cosines': continuity, 'threshold': rules['face_cosine'], 'scope': 'Pencocokan frame; bukan attestation kamera atau deteksi seluruh injection.'})
@@ -382,24 +390,28 @@ class VerificationService:
                 add('Anti-spoof / PAD', pad_score >= rules['pad_probability'], pad_detail)
                 stage = "verify"
                 # This generic AI-image classifier is not calibrated for KYC
-                # camera images. Keep its real output for diagnostics, but never
-                # let it declare an attack or invalidate otherwise valid KYC.
+                # camera images. Preserve outputs and assess input disagreement;
+                # uncertainty requires review, never a definitive fraud verdict.
                 diagnostic = {'name': 'Classifier gambar AI (diagnostik)', 'mode': 'real',
-                              'effect': 'advisory', 'stage': stage, 'calibrated': False}
+                              'effect': 'required', 'stage': stage, 'calibrated': False}
                 try:
-                    fake = self.deepfake.score(selfie)
-                    held_fake = self.deepfake.score(holding)
+                    fake = self.deepfake.assess(selfie, self_face)
+                    held_fake = self.deepfake.assess(holding, holding_face)
                     fake_risk = max(fake['fake_probability'], held_fake['fake_probability'])
                     scores['deepfake'] = fake_risk
-                    diagnostic.update(status='informational', detail={
+                    ai_reliable = fake['reliable'] and held_fake['reliable']
+                    scores['ai_reliability'] = bool(ai_reliable)
+                    diagnostic.update(status='passed' if ai_reliable and fake_risk <= rules['deepfake_risk'] else 'review', detail={
                         'selfie': fake, 'kyc': held_fake, 'maximum_fake_probability': fake_risk,
                         'input_scope': 'full_camera_image',
                         'reference_threshold': rules['deepfake_risk'],
-                        'message': 'Classifier belum dikalibrasi untuk capture KYC. Skor disimpan sebagai diagnostik dan tidak menentukan kelulusan.'})
+                        'reliable': bool(ai_reliable),
+                        'message': 'Classifier menyumbang skor bukti gambar. Skor tinggi atau perbedaan besar antar input memerlukan tinjauan; bukan bukti pasti manipulasi.'})
                 except Exception:
                     log.error('Image diagnostic unavailable for session %s', session.id)
+                    scores['ai_reliability'] = False
                     diagnostic.update(status='unavailable', detail={
-                        'message': 'Analisis gambar tambahan tidak tersedia; keputusan memakai kontrol KYC utama.'})
+                        'message': 'Analisis gambar tidak tersedia; verifikasi lengkap memerlukan pemeriksaan ulang.'})
                 checks.append(diagnostic)
                 if not live["passed"]:
                     status, reason = 'capture', 'Gerakan tantangan belum terbaca. Ulangi capture dengan wajah terang dan gerakan lebih jelas.'
@@ -416,6 +428,11 @@ class VerificationService:
                             "attack",
                             "Model anti-spoof / PAD memberi sinyal risiko foto atau layar. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.",
                         )
+                elif diagnostic['status'] == 'unavailable':
+                    status, reason = 'technical', 'Classifier gambar belum tersedia. Jalankan pemeriksaan ulang.'
+                    retry = {'stage': 'verify', 'label': 'Jalankan pemeriksaan ulang', 'reason': reason}
+                elif held_pad['live_probability'] < rules['pad_probability'] or diagnostic['status'] != 'passed':
+                    status, reason = 'manual', 'Bukti PAD foto KYC atau classifier gambar belum meyakinkan. Diperlukan pemeriksaan petugas.'
                 elif not same_card or face_score < rules['face_cosine'] or kyc_face_score < rules['face_cosine'] or not same_face:
                     status, reason = 'manual', 'Kesesuaian dokumen atau wajah belum memenuhi ambang. Perlu pemeriksaan petugas.'
         except CaptureError as exc:
@@ -446,7 +463,7 @@ class VerificationService:
                   'status': status, 'reason': reason, 'created': utcnow(), 'attempt': session.attempt,
                   'duration_ms': round((time.perf_counter()-started)*1000), 'scores': scores, 'checks': checks,
                   'rules': rules, 'retry': retry, 'identity_verified': bool(dukcapil['identity_verified']), 'dukcapil': dukcapil, 'inference': 'real',
-                  'decision_policy': 'kyc-core-v2-temporal-pad-full-image-diagnostic'}
+                  'decision_policy': 'kyc-core-v3-all-controls-context-ai'}
         result["pad_review_required"] = bool(
             self.pad_review_enabled
             and status == "manual"

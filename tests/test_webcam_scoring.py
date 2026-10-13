@@ -89,7 +89,7 @@ def test_pipeline_classifier_receives_original_images_never_arcface_alignment(
     def forbidden(*args):
         raise AssertionError("ArcFace alignment must not feed the image classifier")
 
-    verifier.deepfake = SimpleNamespace(score=score)
+    verifier.deepfake = SimpleNamespace(assess=lambda image, face: {**score(image), 'reliable': True})
     verifier.face.feature = forbidden
     result = verifier.run(session, selfie, holding, [], [])
     assert result["status"] == "pass" and result["scores"]["deepfake"] == 0.001

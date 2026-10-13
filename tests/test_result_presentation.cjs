@@ -49,7 +49,7 @@ test("operator diagnostics keep the raw score without labelling it a failed cont
     context.checkRows(result, { diagnostics: true });
   assert.match(html, /99.7%/);
   assert.match(html, /Diagnostik/);
-  assert.match(html, /tidak menentukan kelulusan/);
+  assert.match(html, /Sinyal tambahan untuk skor dan tinjauan KYC/);
   assert.doesNotMatch(html, /Fake probability|Belum terpenuhi/);
 });
 test("a real core failure remains visible in applicant results", () => {
@@ -85,6 +85,7 @@ test("persistent applicant result displays demo Dukcapil pass with manual decisi
     principal: null,
     flow: null,
     page: "result",
+    routingExplanation: () => "",
   });
   vm.runInContext(
     workflow.slice(
@@ -132,7 +133,7 @@ test("new webcam results explain recording score and full-frame diagnostics", ()
   const applicant = context.scoreCards(current);
   assert.match(
     applicant,
-    /Skor PAD rekaman wajah|Foto memegang KTP dinilai terpisah/,
+    /Skor PAD rekaman wajah|Foto memegang KTP menjadi kontrol terpisah/,
   );
   assert.doesNotMatch(applicant, /Minimum mentah|Classifier|0.1%/);
   const operator = context.scoreCards(current, { diagnostics: true });
@@ -145,4 +146,58 @@ test("historic results retain their original score and identify the legacy diagn
   assert.match(html, /Skor PAD seluruh capture|input versi lama/);
   assert.match(html, /99.7%/);
   assert.doesNotMatch(html, /median|gambar kamera utuh/);
+});
+
+test("routing explanation exposes all five contributions and blocks uncertainty clearly", () => {
+  const workflow = fs.readFileSync("app/view/static/workflow-ui.js", "utf8");
+  const panel = vm.createContext({ esc: String });
+  vm.runInContext(
+    workflow.slice(
+      workflow.indexOf("function routingExplanation("),
+      workflow.indexOf("function applicationPanel("),
+    ),
+    panel,
+  );
+  const html = panel.routingExplanation({
+    contributions: { face: 24, pad: 18, ocr: 9, ai: 0, controls: 25 },
+    components: { face: 96, pad: 72, ocr: 90, ai: 0, controls: 83.333 },
+    weights: { face: 0.25, pad: 0.25, ocr: 0.1, ai: 0.1, controls: 0.3 },
+    ai_evidence_usable: false,
+    assessment: {
+      blocked_controls: [
+        "Classifier gambar AI (diagnostik)",
+        "session_nonce_proof",
+      ],
+    },
+  });
+  assert.match(html, /25%|30%|10%/);
+  assert.match(html, /Poin heuristik|Semua kontrol wajib juga harus terpenuhi/);
+  assert.match(html, /tidak mendapat poin bukti|Binding bukti sesi/);
+  assert.doesNotMatch(html, /session_nonce_proof/);
+  assert.equal(panel.routingExplanation({}), "");
+});
+
+test("current uncertain classifier evidence is shown as review without a fraud verdict", () => {
+  const current = {
+    ...result,
+    checks: [
+      {
+        name: "Classifier gambar AI (diagnostik)",
+        mode: "real",
+        effect: "required",
+        status: "review",
+        detail: {
+          reliable: false,
+          input_scope: "full_camera_image",
+          message: "Hasil antar input tidak konsisten",
+        },
+      },
+    ],
+  };
+  const html =
+    context.checkRows(current) +
+    context.scoreCards(current, { diagnostics: true });
+  assert.match(html, /Perlu tinjauan|antar input tidak konsisten/);
+  assert.match(html, /Skor tinggi bukan bukti manipulasi/);
+  assert.doesNotMatch(html, /tidak menentukan kelulusan/);
 });

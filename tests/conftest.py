@@ -44,3 +44,10 @@ def ktp_image():
 
 def encoded(image):
     return cv2.imencode('.jpg',image)[1].tobytes()
+
+
+def complete_control_fixture():
+    """Protocol fixture only: no claim of actual model/security accuracy."""
+    from app.services.assessment import CONTROL_NAMES
+    return [{'name': name, 'status': 'passed', 'mode': 'protocol fixture',
+             'detail': {'fixture': True}} for name in CONTROL_NAMES]

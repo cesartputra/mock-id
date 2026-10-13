@@ -21,6 +21,7 @@ from app.services.workflow import JAKARTA
 from app.services.slik import DEMO_MARKER, MockSlikAdapter
 from app.model.entities import CaptureSession
 from test_registration import payload
+from conftest import complete_control_fixture
 
 
 def account(client, login="another-user", role="applicant"):
@@ -54,7 +55,7 @@ def prepare(client, face_image, owner=None, manual=False):
     session.liveness_selfie = "fixture-bound-image-digest"
     result = {
         "id": "VRF-TEST-" + session.id,
-        "status": "pass",
+        "status": "manual" if manual else "pass",
         "nik_masked": "•••• •••• •••• 3456",
         "reason": "Protocol policy fixture",
         "scores": {
@@ -62,17 +63,14 @@ def prepare(client, face_image, owner=None, manual=False):
             "kyc_face_cosine": 0.93,
             "liveness": 0.4 if manual else 0.972,
             "ocr": 0.8 if manual else 0.98,
+            "deepfake": .01, "ai_reliability": True,
         },
-        "checks": [
-            {
-                "name": "Fixture mandatory model control",
-                "status": "passed",
-                "mode": "protocol fixture",
-            }
-        ],
+        "checks": complete_control_fixture(),
         "identity_verified": False,
         "retry": None,
     }
+    if manual:
+        next(c for c in result["checks"] if c["name"] == "Anti-spoof / PAD")["status"] = "failed"
     snapshot = flow.ingest(session, result, face_image, face_image, [face_image])
     return snapshot, session, result
 
@@ -102,7 +100,7 @@ def test_unrounded_policy_boundaries(monkeypatch, score, decision):
     policy = ScorePolicy()
     monkeypatch.setattr(policy.calibrator, "score", lambda raw: (score, {}))
     result = policy.route(
-        {"status": "pass", "scores": {}}, {key: True for key in REQUIRED_CONTROLS}
+        {"status": "pass", "scores": {}, "checks": complete_control_fixture()}, {key: True for key in REQUIRED_CONTROLS}
     )
     assert (
         result["decision"] == decision
@@ -116,7 +114,7 @@ def test_mandatory_and_errors_cannot_be_hidden_by_score(monkeypatch):
     monkeypatch.setattr(policy.calibrator, "score", lambda raw: (100, {}))
     assert (
         policy.route(
-            {"status": "pass", "scores": {}},
+            {"status": "pass", "scores": {}, "checks": complete_control_fixture()},
             {
                 **{key: True for key in REQUIRED_CONTROLS},
                 "approved_identity_procedure": False,
@@ -136,14 +134,14 @@ def test_mandatory_and_errors_cannot_be_hidden_by_score(monkeypatch):
         policy.route({"status": "attack", "scores": {}}, {})["decision"] == "REJECTED"
     )
     policy = ScorePolicy()
-    result = policy.route({"status": "pass", "scores": {}}, {"valid": True})
+    result = policy.route({"status": "pass", "scores": {}, "checks": complete_control_fixture()}, {"valid": True})
     assert result["routing_score"] is None and result["decision"] == "TECHNICAL_PENDING"
 
 
 def test_demo_mapping_is_not_cosine_percent_and_rejects_nonfinite():
     assert mapped(0.6, DEMO_POINTS["face"]) == 97
     score, _ = ScoreCalibrator().score(
-        {"face_cosine": 0.6, "kyc_face_cosine": 0.9, "liveness": 0.95, "ocr": 0.9}
+        {"face_cosine": 0.6, "kyc_face_cosine": 0.9, "liveness": 0.95, "ocr": 0.9, "deepfake": .01, "ai_reliability": True, "validation_coverage": 1}
     )
     assert 95 < score < 100
     assert ScoreCalibrator().score({"face_cosine": float("nan")}) == (None, None)
@@ -155,7 +153,7 @@ def test_production_without_calibration_cannot_autoapprove(monkeypatch):
     monkeypatch.setattr(policy.calibrator, "score", lambda raw: (100, {}))
     assert (
         policy.route(
-            {"status": "pass", "scores": {}}, {key: True for key in REQUIRED_CONTROLS}
+            {"status": "pass", "scores": {}, "checks": complete_control_fixture()}, {key: True for key in REQUIRED_CONTROLS}
         )["decision"]
         == "MANUAL_PENDING"
     )
@@ -163,11 +161,13 @@ def test_production_without_calibration_cannot_autoapprove(monkeypatch):
 
 def test_calibration_artifact_requires_integrity_and_evaluation(monkeypatch, tmp_path):
     data = {
-        "schema": 1,
-        "version": "calibration-fixture-v1",
+        "schema": 2,
+        "feature_policy": "all-controls-v1-pad-min-geometry-ai-context",
+        "model_sha256": __import__("app.services.score_policy", fromlist=["calibration_contract"]).calibration_contract(),
+        "version": "calibration-fixture-v2",
         "face_model": "insightface-buffalo-l-w600k-r50",
         "points": DEMO_POINTS,
-        "weights": {"face": 0.45, "pad": 0.35, "ocr": 0.2},
+        "weights": {"face": .25, "pad": .25, "ocr": .1, "ai": .1, "controls": .3},
         "evaluation_report": "fixture only — not approved production accuracy",
         "approved_by": "protocol-test",
     }
@@ -519,15 +519,15 @@ def test_high_score_with_authority_or_proof_missing_never_issues(client, face_im
     result = {
         "id": "invalid-proof-fixture",
         "status": "pass",
-        "scores": {"face_cosine": 0.9, "kyc_face_cosine": 0.9, "ocr": 1, "liveness": 1},
-        "checks": [{"name": "fixture", "mode": "fixture", "status": "passed"}],
+        "scores": {"face_cosine": 0.9, "kyc_face_cosine": 0.9, "ocr": 1, "liveness": 1, "deepfake": 0, "ai_reliability": True},
+        "checks": complete_control_fixture(),
         "identity_verified": False,
         "nik_masked": "3456",
         "reason": "fixture",
     }
     routed = flow.ingest(session, result, face_image, face_image, [])
     assert (
-        routed["routing"]["routing_score"] == 100
+        routed["routing"]["routing_score"] < 100
         and routed["state"] == "MANUAL_PENDING"
     )
     assert client.post("/api/applications/" + app["id"] + "/slik").status_code == 409
@@ -731,7 +731,7 @@ def test_missing_mandatory_fields_never_autoapprove(monkeypatch):
     policy = ScorePolicy()
     monkeypatch.setattr(policy.calibrator, "score", lambda raw: (100, {}))
     assert (
-        policy.route({"status": "pass", "scores": {}}, {})["decision"]
+        policy.route({"status": "pass", "scores": {}, "checks": complete_control_fixture()}, {})["decision"]
         == "TECHNICAL_PENDING"
     )
 
@@ -960,7 +960,7 @@ def test_calibrated_production_keeps_previous_thresholds(monkeypatch, score, dec
     policy.calibrator.calibrated = True
     monkeypatch.setattr(policy.calibrator, "score", lambda _: (score, {}))
     routed = policy.route(
-        {"status": "pass", "scores": {}}, {key: True for key in REQUIRED_CONTROLS}
+        {"status": "pass", "scores": {}, "checks": complete_control_fixture()}, {key: True for key in REQUIRED_CONTROLS}
     )
     assert routed["decision"] == decision and routed["automatic_threshold"] == 95
     assert not routed["demo_model_override"]

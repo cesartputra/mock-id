@@ -6,11 +6,15 @@ import math
 import os
 from pathlib import Path
 from app.services.face import FACE_MODEL_ID
+from app.services.assessment import assess_controls
+from app.config import ROOT
 
 DEMO_POINTS = {
     "face": [(-1, 0), (0.2, 40), (0.4, 75), (0.5, 92), (0.6, 97), (0.85, 100)],
     "pad": [(0, 0), (0.8, 75), (0.9, 92), (0.95, 97), (0.995, 100)],
     "ocr": [(0, 0), (0.6, 60), (0.8, 85), (0.9, 95), (1, 100)],
+    "ai": [(0, 0), (1, 100)],
+    "controls": [(0, 0), (1, 100)],
 }
 REQUIRED_CONTROLS = {
     "session_nonce_proof",
@@ -21,18 +25,16 @@ REQUIRED_CONTROLS = {
     "approved_identity_procedure",
 }
 
-DEMO_SOFT_CONTROLS = {
-    "Wajah KTP ↔ selfie",
-    "Wajah selfie ↔ foto KYC",
-    "Kontinuitas wajah capture",
-    "Anti-spoof / PAD",
-}
-DEMO_HARD_CONTROLS = REQUIRED_CONTROLS - {
-    "document_face_liveness_pad",
-    "approved_identity_procedure",
-}
+# Latest policy: every control is a gate. Numeric strength cannot replace
+# missing, failed or uncertain identity/security evidence.
+WEIGHTS = {"face": 0.25, "pad": 0.25, "ocr": 0.10, "ai": 0.10, "controls": 0.30}
+FEATURE_POLICY = "all-controls-v1-pad-min-geometry-ai-context"
 
-WEIGHTS = {"face": 0.45, "pad": 0.35, "ocr": 0.20}
+
+def calibration_contract():
+    manifest = json.loads((ROOT / "model-manifest.json").read_text())
+    # OCR, detectors, landmarks and visibility also affect control coverage.
+    return {item["file"]: item["sha256"] for item in manifest}
 
 
 def mapped(value, points):
@@ -46,7 +48,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v5-arcface-r50-temporal-pad-auto50"
+        self.version = "demo-routing-v6-all-controls"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -62,11 +64,13 @@ class ScoreCalibrator:
             if (
                 not artifact.get("evaluation_report")
                 or not artifact.get("approved_by")
-                or artifact.get("schema") != 1
+                or artifact.get("schema") != 2
+                or artifact.get("feature_policy") != FEATURE_POLICY
+                or artifact.get("model_sha256") != calibration_contract()
                 or artifact.get("face_model") != FACE_MODEL_ID
             ):
                 raise ValueError(
-                    "Artefak kalibrasi harus memiliki evaluasi/persetujuan dan model ArcFace R50 yang sesuai."
+                    "Artefak kalibrasi schema 2 membutuhkan evaluasi, persetujuan, seluruh model dan kontrak fitur yang sesuai."
                 )
             for name in WEIGHTS:
                 points = artifact["points"][name]
@@ -96,7 +100,14 @@ class ScoreCalibrator:
             self.weights = weights
 
     def score(self, raw):
-        required = ["face_cosine", "kyc_face_cosine", "liveness", "ocr"]
+        required = [
+            "face_cosine",
+            "kyc_face_cosine",
+            "liveness",
+            "ocr",
+            "deepfake",
+            "validation_coverage",
+        ]
         if any(
             type(raw.get(k)) not in [float, int] or not math.isfinite(raw[k])
             for k in required
@@ -106,11 +117,16 @@ class ScoreCalibrator:
             "face": min(raw["face_cosine"], raw["kyc_face_cosine"]),
             "pad": raw["liveness"],
             "ocr": raw["ocr"],
+            "ai": 1 - raw["deepfake"] if raw.get("ai_reliability") is True else 0,
+            "controls": raw["validation_coverage"],
         }
         if (
             not -1 <= values["face"] <= 1
             or not 0 <= values["pad"] <= 1
             or not 0 <= values["ocr"] <= 1
+            or not 0 <= raw["deepfake"] <= 1
+            or not 0 <= values["controls"] <= 1
+            or type(raw.get("ai_reliability")) is not bool
         ):
             return None, None
         components = {
@@ -138,7 +154,12 @@ class ScorePolicy:
         return 50 if self.mode == "demo" and not self.calibrator.calibrated else 95
 
     def route(self, result, mandatory):
-        score, components = self.calibrator.score(result.get("scores", {}))
+        assessment = assess_controls(result, mandatory, demo=self.mode == "demo")
+        raw = {
+            **result.get("scores", {}),
+            "validation_coverage": assessment["coverage"],
+        }
+        score, components = self.calibrator.score(raw)
         state = result["status"]
         if state == "attack" or mandatory.get("no_security_rejection") is False:
             decision = "REJECTED"
@@ -154,16 +175,21 @@ class ScorePolicy:
         ):
             decision = "TECHNICAL_PENDING"
             security = False
-        elif self.mode == "demo" and not self.calibrator.calibrated:
-            # Demo-only policy requested by the owner: numeric model uncertainty
-            # may be accepted for a synthetic report. Raw failed controls remain
-            # false; missing proof/identity, mismatched NIK and attacks cannot be
-            # turned into a valid decision by a high score.
-            eligible = all(mandatory.values()) or (
-                result.get("demo_score_eligible") is True
-                and all(mandatory[key] for key in DEMO_HARD_CONTROLS)
+        elif (
+            not assessment["all_passed"]
+            or not all(mandatory.values())
+            or state != "pass"
+        ):
+            decision = (
+                "TECHNICAL_PENDING" if assessment["incomplete"] else "MANUAL_PENDING"
             )
-            decision = "AUTO_APPROVED" if score >= 50 and eligible else "MANUAL_PENDING"
+            security = False
+        elif self.mode == "demo" and not self.calibrator.calibrated:
+            decision = (
+                "AUTO_APPROVED"
+                if score >= self.automatic_threshold
+                else "MANUAL_PENDING"
+            )
             security = False
         elif score < 75:
             decision = "REJECTED"
@@ -182,17 +208,24 @@ class ScorePolicy:
             "demo_routing_score": score if not self.calibrator.calibrated else None,
             "routing_score": score,
             "components": components,
+            "weights": dict(self.calibrator.weights),
+            "contributions": (
+                {
+                    name: self.calibrator.weights[name] * value
+                    for name, value in components.items()
+                }
+                if components
+                else None
+            ),
+            "assessment": assessment,
+            "formula": "sum(component_points * weight); automatic approval also requires every control passing",
+            "ai_evidence_usable": raw.get("ai_reliability") is True,
             "calibrated": self.calibrator.calibrated,
             "policy_version": self.calibrator.version,
             "mandatory": mandatory,
             "decision": decision,
             "security_review": security,
             "automatic_threshold": self.automatic_threshold,
-            "demo_model_override": bool(
-                self.mode == "demo"
-                and not self.calibrator.calibrated
-                and decision == "AUTO_APPROVED"
-                and not all(mandatory.values())
-            ),
+            "demo_model_override": False,
             "scope": "synthetic_only" if self.mode == "demo" else "production",
         }

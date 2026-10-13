@@ -13,7 +13,7 @@ def policy_case(client, face_image, monkeypatch):
     session.consumed = True
     state = {'pad': .972, 'face': .620, 'same_face': .93, 'nik_matches': True,
              'visible': True, 'hand': True, 'live': True, 'continuity': .92,
-             'fake': .997, 'diagnostic_error': False}
+             'fake': .019, 'diagnostic_error': False, 'ai_reliable': True}
     verifier = client.app.state.verifier
     monkeypatch.setattr(verifier, 'load', lambda: None)
     verifier.face = SimpleNamespace(
@@ -27,8 +27,8 @@ def policy_case(client, face_image, monkeypatch):
     def diagnostic(_image):
         if state['diagnostic_error']:
             raise RuntimeError('Diagnostic-only fixture failure')
-        return {'fake_probability': state['fake'], 'real_probability': 1-state['fake'], 'mode': 'policy fixture'}
-    verifier.deepfake = SimpleNamespace(score=diagnostic)
+        return {'fake_probability': state['fake'], 'real_probability': 1-state['fake'], 'mode': 'policy fixture', 'reliable': state['ai_reliable']}
+    verifier.deepfake = SimpleNamespace(assess=lambda image, face: diagnostic(image))
     monkeypatch.setattr(HoldingCardService, 'read', lambda *_args, **_kwargs: {
         'reading': {'fields': {'nik': '1234567890123456' if state['nik_matches'] else '9999999999999999'}, 'confidence': .9},
         'box': [0, 0, 100, 60], 'method': 'policy fixture'})
@@ -43,15 +43,15 @@ def policy_case(client, face_image, monkeypatch):
     return state, run, session
 
 
-def test_high_fake_score_preserves_valid_kyc_and_registration_handoff(client, policy_case):
+def test_image_evidence_participates_in_kyc_and_registration_handoff(client, policy_case):
     state, run, session = policy_case
     result = run()
     assert result['status'] == 'pass'
-    assert result['scores']['deepfake'] == .997  # Real raw output not suppressed/changed.
+    assert result['scores']['deepfake'] == .019  # Raw output preserved.
     diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
-    assert diagnostic['status'] == 'informational' and not diagnostic['calibrated']
+    assert diagnostic['status'] == 'passed' and not diagnostic['calibrated']
     assert not any(c['status'] == 'failed' for c in result['checks'])
-    assert result['decision_policy'] == 'kyc-core-v2-temporal-pad-full-image-diagnostic'
+    assert result['decision_policy'] == 'kyc-core-v3-all-controls-context-ai'
     assert not result['identity_verified']
     assert client.app.state.repository.result(result['id']) == result
     body = {**payload(), 'session_id': session.id, 'verification_id': result['id']}
@@ -59,7 +59,7 @@ def test_high_fake_score_preserves_valid_kyc_and_registration_handoff(client, po
     assert response.status_code == 409  # Raw pass has no persistent application approval.
     # Changing a diagnostic threshold cannot turn valid captures into attacks.
     client.app.state.repository.set_settings({**result['rules'], 'deepfake_risk': .01})
-    assert run()['status'] == 'pass'
+    assert run()['status'] == 'manual'
 
 
 @pytest.mark.parametrize('field,value,status', [
@@ -83,7 +83,7 @@ def test_advisory_classifier_exception_does_not_invalidate_core_checks(policy_ca
     state, run, _session = policy_case
     state['diagnostic_error'] = True
     result = run()
-    assert result['status'] == 'pass' and 'deepfake' not in result['scores']
+    assert result['status'] == 'technical' and 'deepfake' not in result['scores']
     diagnostic = next(c for c in result['checks'] if c['name'] == 'Classifier gambar AI (diagnostik)')
     assert diagnostic['status'] == 'unavailable'
 
@@ -115,7 +115,7 @@ def test_uncertain_pad_takes_today_quota_but_never_issues_without_review(client,
     state['face'] = .2
     result = run()
     routed = workflow.ingest(session,result,face_image,face_image,[face_image])
-    assert routed['routing']['routing_score'] < 50
+    assert not routed['routing']['assessment']['all_passed']
     assert routed['state']=='MANUAL_PENDING'
     with workflow.repository.connect() as con:
         stored=workflow.get(con,routed['id'])['payload']['routing']
@@ -139,14 +139,14 @@ def test_holding_pad_diagnostic_in_demo_and_required_in_strict_mode(client, poli
     client.app.state.verifier.pad.score = score
     result = run()
     assert len(calls)==2
-    assert result['status'] == ('attack' if strict else 'pass')
+    assert result['status'] == ('attack' if strict else 'manual')
     assert result['scores']['liveness'] == (.01 if strict else state['pad'])
     pad = next(c for c in result['checks'] if c['name'] == 'Anti-spoof / PAD')
     assert pad['detail']['minimum_live_probability'] == .01
     assert pad['detail']['holding']['live_probability'] == .01
     if not strict:
-        held = next(c for c in result['checks'] if c['name'] == 'PAD foto memegang KTP (diagnostik)')
-        assert held['effect'] == 'advisory' and held['status'] == 'informational'
+        held = next(c for c in result['checks'] if c['name'] == 'PAD foto memegang KTP')
+        assert held['status'] == 'failed'
 
 
 def test_production_service_keeps_strict_pad_policy(client, monkeypatch):
@@ -158,17 +158,18 @@ def test_production_service_keeps_strict_pad_policy(client, monkeypatch):
 
 def test_uncertain_pad_route_requires_explicit_server_eligibility_and_valid_proof():
     from app.services.score_policy import ScorePolicy, REQUIRED_CONTROLS
+    from conftest import complete_control_fixture
     policy=ScorePolicy()
-    result={'status':'manual','pad_review_required':True,'scores':{'face_cosine':.62,'kyc_face_cosine':.93,'liveness':.001,'ocr':.98}}
+    result={'status':'manual','checks':complete_control_fixture(),'pad_review_required':True,'scores':{'face_cosine':.62,'kyc_face_cosine':.93,'liveness':.001,'ocr':.98,'deepfake':.01,'ai_reliability':True}}
     controls={key:True for key in REQUIRED_CONTROLS}
     controls['document_face_liveness_pad']=False
     assert policy.route(result,controls)['decision']=='MANUAL_PENDING'
     assert policy.route(result,{**controls,'session_nonce_proof':False})['decision']=='MANUAL_PENDING'
     policy.mode='production'
-    assert policy.route(result,controls)['decision']=='REJECTED'
+    assert policy.route(result,controls)['decision']=='MANUAL_PENDING'
     policy.mode='demo'
     policy.calibrator.calibrated=True
-    assert policy.route(result,controls)['decision']=='REJECTED'
+    assert policy.route(result,controls)['decision']=='MANUAL_PENDING'
 
 
 def test_mock_dukcapil_pass_is_persisted_and_reset_without_changing_official_identity(client, face_image, policy_case):
@@ -197,7 +198,7 @@ def test_mock_dukcapil_pass_does_not_approve_uncertain_pad(policy_case):
     assert result['status']=='manual'
 
 
-def test_demo50_accepts_numeric_pad_uncertainty_and_issues_identity_bound_pdf(client, face_image, policy_case):
+def test_demo50_cannot_override_numeric_pad_uncertainty(client, face_image, policy_case):
     state,run,session=policy_case
     session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
     session.proof_checked_revision=session.revision
@@ -208,19 +209,10 @@ def test_demo50_accepts_numeric_pad_uncertainty_and_issues_identity_bound_pdf(cl
     result=run()
     assert result['status']=='manual'
     routed=workflow.ingest(session,result,face_image,face_image,[face_image])
-    assert 50<=routed['routing']['routing_score']<75
-    assert routed['state']=='AUTO_APPROVED' and routed['routing']['demo_model_override']
-    with workflow.repository.connect() as con:
-        stored=workflow.get(con,routed['id'])['payload']['routing']
-    assert stored['mandatory']['document_face_liveness_pad'] is False
-    issued=client.app.state.slik.issue(routed['id'],client.fixture_actor)
-    assert issued['state']=='SLIK_READY'
-    response=client.get('/api/applications/'+routed['id']+'/slik.pdf')
-    assert response.status_code==200 and response.content.startswith(b'%PDF')
-    from io import BytesIO
-    from pypdf import PdfReader
-    text='\n'.join(p.extract_text() for p in PdfReader(BytesIO(response.content)).pages)
-    assert 'PEMOHON TEST' in text and '1234567890123456' in text
+    assert routed['state']=='MANUAL_PENDING' and not routed['routing']['demo_model_override']
+    assert not routed['routing']['assessment']['all_passed']
+    assert client.post('/api/applications/'+routed['id']+'/slik').status_code==409
+
 
 
 @pytest.mark.parametrize('field,value', [('nik_matches',False),('visible',False),('hand',False),('live',False)])
@@ -237,12 +229,13 @@ def test_demo50_cannot_issue_for_failed_identity_or_capture(client,face_image,po
     assert client.post('/api/applications/'+routed['id']+'/slik').status_code==409
 
 
-@pytest.mark.parametrize('score,decision',[(49.999,'MANUAL_PENDING'),(50,'AUTO_APPROVED'),(50.001,'AUTO_APPROVED')])
+@pytest.mark.parametrize('score,decision',[(49.999,'MANUAL_PENDING'),(50,'MANUAL_PENDING'),(50.001,'MANUAL_PENDING')])
 def test_demo50_boundary_and_original_failed_controls(monkeypatch,score,decision):
     from app.services.score_policy import ScorePolicy, REQUIRED_CONTROLS
+    from conftest import complete_control_fixture
     policy=ScorePolicy()
     monkeypatch.setattr(policy.calibrator,'score',lambda _:(score,{}))
-    result={'status':'manual','scores':{},'demo_score_eligible':True}
+    result={'status':'manual','scores':{},'checks':complete_control_fixture()}
     controls={k:True for k in REQUIRED_CONTROLS}
     controls.update(document_face_liveness_pad=False,approved_identity_procedure=False)
     routed=policy.route(result,controls)

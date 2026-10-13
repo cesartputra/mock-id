@@ -1,5 +1,7 @@
 # Webcam PAD and image diagnostic correction (3.1.4)
 
+Historical behavior for 3.1.4; see [3.2.0 scoring and corrections](KYC-SCORING.md) for the current policy.
+
 The Swin V2 face checkpoint keeps its existing official face-region preprocessing: detector bounding box plus 20 pixels, RGB 224×224, ImageNet normalization, live class 0. Neither a larger crop chosen for a passing score nor a reversed label is introduced. See the [upstream preprocessing description](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge#data-preprocess) and [validation transforms](https://github.com/Xianhua-He/cvpr2024-face-anti-spoofing-challenge/blob/2b7e9d2f6af93e33806c11ad48f735f1c1810dad/datasets/utils.py).
 
 ## Corrected input and aggregation

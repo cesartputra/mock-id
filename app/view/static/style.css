@@ -3300,3 +3300,9 @@ textarea {
     width: 100%;
   }
 }
+
+.routing-table-scroll { overflow-x: auto; }
+.routing-explanation { margin: 1rem 0; }
+.routing-explanation summary { cursor: pointer; font-weight: 600; }
+.routing-explanation table { width: 100%; border-collapse: collapse; min-width: 380px; }
+.routing-explanation th, .routing-explanation td { padding: .7rem; text-align: left; border-bottom: 1px solid #e6e6e6; }

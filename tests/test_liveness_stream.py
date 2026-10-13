@@ -370,10 +370,10 @@ def test_mask_and_spoof_still_reset_gesture_after_soft_gap(client, monkeypatch):
     neutral(capture.gestures)
     verifier=client.app.state.verifier
     # Detector outputs isolate state transitions, not model accuracy.
-    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'mask','message':'Masker'}]})
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _, **kwargs: {'ready':False,'warnings':[{'code':'mask','message':'Masker'}]})
     result=verifier.inspect_liveness_frame(capture,None,'x',0)
     assert capture.gestures.baseline is None and not result['passed']
-    monkeypatch.setattr(verifier,'inspect_capture',lambda _: {'ready':False,'warnings':[{'code':'spoof_risk','message':'Spoof'}]})
+    monkeypatch.setattr(verifier,'inspect_capture',lambda _, **kwargs: {'ready':False,'warnings':[{'code':'spoof_risk','message':'Spoof'}]})
     first=verifier.inspect_liveness_frame(capture,None,'y',1)
     second=verifier.inspect_liveness_frame(capture,None,'z',2)
     assert not first['done'] and second['done'] and not second['passed']

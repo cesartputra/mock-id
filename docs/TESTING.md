@@ -1,5 +1,15 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Validasi terbaru 3.6.0 — 14 Oktober 2026
+
+Suite penuh final lulus **349 tes Python dan 96 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile dan whitespace diff lulus. Tidak ada bobot atau dependency baru.
+
+Lima belas kasus Python tambahan memakai piksel sintetis untuk memeriksa batas luminans 35/36, wajah/area panduan gelap dengan latar terang, area panduan terang dengan latar gelap, precheck selfie/holding/OCR tanpa memuat atau menjalankan model, pemeriksaan crop wajah sebelum atribut/tangan/PAD, tidak adanya selfie/PAD/bukti gerakan dari frame gelap, retry tahap yang benar pada verifikasi akhir, serta jeda tanpa gambar yang terikat nonce/urutan/waktu sesi. Jeda mempertahankan gerakan selesai dan tidak menghapus sinyal spoof sebelumnya atau menambah frame/bukti. Tiga tes preview PAD lama sekarang menggunakan foto astronaut publik sebagai input piksel valid, dengan keluaran model tetap berupa fixture protokol.
+
+Delapan tes JavaScript tambahan memeriksa bobot RGB, ambang gelap dan hysteresis pemulihan, pembacaan area video asli, penahanan foto/unggah sebelum inferensi, respons terang yang terlambat ketika kamera sudah gelap, pemulihan warning tanpa mengotorisasi capture, jeda liveness tanpa gambar/nomor frame yang terlewati, pembatalan di tengah jeda, serta lifecycle lightbox putih dan penghentian timer/track saat ditutup. Regresi blur lokal yang tidak menghalangi pemeriksaan kualitas ROI server tetap lulus.
+
+QA browser menggunakan harness terisolasi `.cache/lightbox360-ui`, fungsi kamera/CSS/LuminanceCheck aktual dan stream canvas sintetis dengan foto astronaut publik; tidak mengakses webcam, KTP, CAPTCHA, data pemohon atau OJK. Surround, dialog, dan backdrop terbukti `rgb(255, 255, 255)`; pergantian terang/gelap menampilkan pesan yang diminta. Ukuran 390×844 tidak memiliki overflow horizontal (`clientWidth=scrollWidth=390`), warning dan tombol Batal terbaca. Ukuran browser dipulihkan. Screenshot tersimpan pada workspace chat: `outputs/app-360-lightbox-bright.jpg`, `app-360-lightbox-dark.jpg`, dan `app-360-lightbox-mobile.jpg`. Pengujian ini memverifikasi perilaku kualitas/transport/state dan layout, bukan ukuran perubahan pencahayaan fisik atau kalibrasi biometrik pada seluruh kamera/warna kulit.
+
 ## Validasi terbaru 3.5.1 — 14 Oktober 2026
 
 Suite penuh lulus **334 tes Python dan 88 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile dan whitespace diff lulus. Tes CAPTCHA server memeriksa bahwa jawaban salah langsung membatalkan challenge lama, puzzle baru berbeda, pemilik lain tidak terpengaruh, serta receipt tetap terikat pemilik dan sekali pakai.

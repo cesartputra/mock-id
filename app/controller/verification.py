@@ -149,6 +149,26 @@ async def live_frame(session_id: str, request: Request, capture_nonce: str = For
             if not request.app.state.inference_queue.pending(session.id): session.liveness_processing = False
 
 
+@router.post('/sessions/{session_id}/liveness/pause')
+def pause_liveness(session_id: str, request: Request,
+                   capture_nonce: str = Form(...), seq: int = Form(ge=0)):
+    """No-image exposure pause; cannot create proof or count a valid frame."""
+    sessions, _, _ = services(request)
+    with sessions.lock:
+        session = sessions.get(session_id)
+        sessions.check_revision(session, request)
+        capture = session.stream_state
+        if (not session.liveness_nonce or not secrets.compare_digest(session.liveness_nonce, capture_nonce)
+                or session.consumed or session.processing or session.liveness_processing or capture is None
+                or seq != capture.sequence):
+            raise HTTPException(409, 'Token atau urutan rekaman tidak valid untuk jeda.')
+        if time.monotonic() - capture.started > capture.DEADLINE:
+            raise HTTPException(422, 'Waktu pemeriksaan habis. Ulangi liveness.')
+        capture.gestures.reset_action()
+        capture.pad_box_history = []
+        return {'paused': True, 'frames': capture.sequence}
+
+
 @router.post('/sessions/{session_id}/liveness/check')
 async def check_liveness(session_id: str, request: Request, capture_nonce: str = Form(...),
                          manifest: str = Form(...), selfie: UploadFile = File(...), frames: list[UploadFile] = File(...)):

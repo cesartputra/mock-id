@@ -23,6 +23,7 @@ from app.services.visibility import FaceVisibilityService
 from app.services.inference import pad_policy
 from app.services.score_policy import ScoreCalibrator
 from app.services.document import read_document, capture_warning
+from app.services.luminance import luminance_check, dark_feedback, require_luminance
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,9 @@ class VerificationService:
                 log.warning('Optional AI diagnostic unavailable; core verification remains available.')
 
     def inspect_capture(self, image, holding=False, capture=None):
+        light = luminance_check(image, 'holding' if holding else 'selfie')
+        if not light['ready']:
+            return dark_feedback(light)
         # Nonblocking lock: preview must not queue behind a full verification.
         if not self.lock.acquire(blocking=False):
             return {'ready':False,'warnings':[{'code':'inference_busy','message':'Model sedang memproses capture lain. Tunggu pemeriksaan kamera berikutnya.'}],'mode':'real'}
@@ -102,7 +106,7 @@ class VerificationService:
                 visibility=FaceVisibilityService(face,landmarks)
                 self.face,self.landmarks,self.visibility=face,landmarks,visibility
             result=self.visibility.inspect(image,holding)
-            if result.get("face_box") is not None:
+            if result.get("face_box") is not None and result.get('luminance', {}).get('ready', True):
                 self.pad=self.pad or create_pad_service()
                 face=self.face.faces(image)[0]
                 pad_face = capture.stabilize_pad_face(face) if capture is not None and result['ready'] else face
@@ -141,6 +145,9 @@ class VerificationService:
             self.lock.release()
 
     def inspect_auto_capture(self, image, context, document=None, identity=None):
+        light = luminance_check(image, context)
+        if not light['ready']:
+            return {**dark_feedback(light), 'complete': False, 'context': context}
         # Serial inference with backpressure. A clean face alone must never
         # trigger a held-card capture: its NIK, hand and face match are required.
         if not self.lock.acquire(blocking=False):
@@ -195,6 +202,7 @@ class VerificationService:
             capture.rules = self.repository.settings()
             capture.pad_review_enabled = self.pad_review_enabled
             if not feedback['ready']:
+                capture.pad_box_history = []
                 codes = {w['code'] for w in feedback['warnings']}
                 if codes and codes <= {'face_missing', 'inference_busy'}:
                     capture.pause_detection()
@@ -235,6 +243,11 @@ class VerificationService:
             return capture.result(feedback, metrics)
 
     def evaluate_liveness(self, session, selfie, frames, manifest):
+        for image in [selfie, *frames]:
+            light = luminance_check(image)
+            if not light['ready']:
+                return {'passed': False, 'reason': light['warnings'][0]['message'],
+                        'visibility': dark_feedback(light), 'mode': 'exposure_precheck'}
         with self.lock:
             self.load()
             rules = self.repository.settings()
@@ -278,6 +291,7 @@ class VerificationService:
             }
 
     def document(self, image):
+        require_luminance(image, 'document')
         with self.lock:
             if not self.availability()['files']['ocr']:
                 raise ModelUnavailable('Model OCR belum diunduh. Jalankan python scripts/setup_models.py.')
@@ -308,6 +322,8 @@ class VerificationService:
             checks.append({'name': name, 'status': 'passed' if passed else 'failed', 'detail': detail, 'mode': mode, 'stage': stage})
 
         try:
+            for stage, image in [('liveness', selfie), ('holding', holding)]:
+                require_luminance(image, 'selfie' if stage == 'liveness' else 'holding')
             with self.lock:
                 self.load()
                 stage = "liveness"

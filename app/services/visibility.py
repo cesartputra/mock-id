@@ -3,6 +3,7 @@ import numpy as np
 from app.config import WEIGHTS
 from app.services.vendor.face_attribute import FaceAttribute
 from app.services.imaging import quality
+from app.services.luminance import luminance_check
 
 
 class FaceVisibilityService:
@@ -30,6 +31,13 @@ class FaceVisibilityService:
         if x < 2 or y < 2 or x+w > iw-2 or y+h > ih-2:
             warn('face_cropped','Seluruh wajah harus masuk bingkai; jangan memotong dahi atau dagu.')
         box=np.array([x,y,x+w,y+h])
+        light = luminance_check(image, face_box=face[:4])
+        if not light['ready']:
+            # Detection located the face, but attributes/hands/PAD must not run
+            # on an underexposed crop, even when the background is bright.
+            return {'ready': False, 'warnings': light['warnings'], 'attributes': {},
+                    'face_box': [round(x), round(y), round(w), round(h)],
+                    'luminance': light, 'mode': 'exposure_precheck'}
         attributes = self.attributes.predict(image,box).as_dict()
         if attributes['mask'] >= .60:
             warn('mask','Lepaskan masker atau penutup mulut dan hidung sebelum melanjutkan.')

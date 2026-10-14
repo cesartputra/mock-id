@@ -1,4 +1,44 @@
 "use strict";
+// Cheap exposure check only. This never approves identity or substitutes for
+// server face/gesture/PAD checks. Read raw video pixels, not the white UI.
+class LuminanceCheck {
+  static message = "Ruangan terlalu gelap, pindah ke tempat terang";
+  constructor() {
+    this.dark = false;
+    this.canvas = null;
+  }
+  pixels(data) {
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4)
+      total += .299 * data[i] + .587 * data[i + 1] + .114 * data[i + 2];
+    const brightness = data.length ? total / (data.length / 4) : NaN;
+    // Reject darkness immediately; recover above 40 to avoid exposure flicker.
+    this.dark = !Number.isFinite(brightness) || brightness <= (this.dark ? 40 : 35);
+    return {
+      ready: !this.dark, brightness, minimum: 35, recovery: 40,
+      warnings: this.dark ? [{ code: "too_dark", message: LuminanceCheck.message }] : [],
+      mode: "exposure_precheck",
+    };
+  }
+  inspect(video, context = "liveness") {
+    if (!video?.videoWidth || !video.videoHeight || video.readyState < 2)
+      return { ready: false, warnings: [{ code: "camera_wait", message: "Menunggu kamera siap." }] };
+    const regions = {
+      liveness: [.35, .20, .65, .80],
+      holding: [.35, .10, .65, .55],
+      document: [.20, .15, .80, .85],
+    };
+    const [left, top, right, bottom] = regions[context];
+    this.canvas ||= document.createElement("canvas");
+    this.canvas.width = 96;
+    this.canvas.height = 96;
+    const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, video.videoWidth * left, video.videoHeight * top,
+      video.videoWidth * (right - left), video.videoHeight * (bottom - top),
+      0, 0, 96, 96);
+    return this.pixels(ctx.getImageData(0, 0, 96, 96).data);
+  }
+}
 // Local hints never authorize KYC. Server rechecks all decision controls.
 class QualityGate {
   constructor() {
@@ -129,4 +169,4 @@ class QualityGate {
     return result;
   }
 }
-if (typeof module !== "undefined") module.exports = { QualityGate };
+if (typeof module !== "undefined") module.exports = { QualityGate, LuminanceCheck };

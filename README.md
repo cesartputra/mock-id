@@ -1,5 +1,22 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.6.0 Screen lightbox dan pemeriksaan kecerahan
+
+Branch `feat/screen-lightbox-luminance` menambahkan **screen lightbox**: sekeliling pratinjau kamera, area kosong video, dialog, dan latar halaman menjadi putih `#FFFFFF` saat liveness/selfie dan foto memegang KTP dibuka. Tampilan semula kembali ketika kamera ditutup. Ini menggunakan cahaya layar; tidak menaikkan brightness sistem atau mengubah piksel foto/video yang dianalisis. Efek pencahayaan tetap bergantung pada brightness layar, jarak wajah, dan kondisi ruangan.
+
+Pemeriksaan luminans ringan membaca area panduan pada **video asli** setiap 150 ms, termasuk saat inferensi server sedang berjalan. Rumusnya `Y = 0,299R + 0,587G + 0,114B` pada skala 0–255. Rata-rata `Y ≤35` menahan pengambilan/unggah frame dan menampilkan **“Ruangan terlalu gelap, pindah ke tempat terang”**. Browser menunggu `Y >40` untuk pulih agar warning tidak berkedip akibat perubahan exposure di dekat ambang. Pemeriksaan tidak memakai blur lokal sebagai pengganti kualitas wajah/KTP server. ROI wajah berada di tengah video; foto memegang KTP memakai area panduan wajah di bagian atas dan OCR memakai area kartu.
+
+Server memeriksa kembali luminans sebelum memuat/menjalankan model. Setelah wajah ditemukan, crop wajah juga diperiksa sebelum atribut, tangan, dan PAD, agar latar terang tidak meloloskan wajah gelap. Frame terlalu gelap tidak menjadi selfie, sampel PAD, atau bukti gerakan dan bukan skor AI nol. Pada liveness, browser mengirim jeda tanpa gambar: gerakan yang belum selesai harus membangun kondisi netral baru, sedangkan gerakan yang sudah lolos dipertahankan. Nomor frame tetap berurutan; nonce, pemilik, versi bukti dan batas waktu server tetap diperiksa. Setelah cukup terang, pemeriksaan kembali berjalan otomatis. Tidak ada model/dependency baru. Ambang luminans ini aturan kualitas demo, belum dikalibrasi sebagai ukuran akurasi biometrik.
+
+```bash
+git fetch origin
+git switch feat/screen-lightbox-luminance
+git pull --ff-only
+npm start
+```
+
+Hentikan server lama sebelum menjalankan kembali, lalu reload `http://127.0.0.1:4173`.
+
 ## Pembaruan 3.5.1 CAPTCHA reset dan lanjut otomatis
 
 Jawaban puzzle diperiksa setelah slider dilepas atau keyboard berhenti digeser. **Posisi salah** membatalkan challenge lama di server, mengembalikan slider/potongan ke awal, dan memuat **gambar serta challenge baru otomatis**. Persetujuan tetap tersimpan, sehingga tidak perlu mencentang ulang. Puzzle kedaluwarsa/tidak berlaku juga dimuat ulang; gangguan koneksi/server ditampilkan agar tidak memicu loop permintaan.

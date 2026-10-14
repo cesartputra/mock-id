@@ -100,7 +100,7 @@ def test_pipeline_classifier_receives_original_images_never_arcface_alignment(
     assert diagnostic["detail"]["input_scope"] == "full_camera_image"
 
 
-def test_holding_preview_low_pad_never_overrides_visibility(client):
+def test_holding_preview_low_pad_never_overrides_visibility(client, face_image):
     verifier = client.app.state.verifier
     verifier.face = SimpleNamespace(faces=lambda _: [[0, 0, 100, 100]])
     verifier.pad = SimpleNamespace(score=lambda *_: {"live_probability": 0.01})
@@ -111,11 +111,11 @@ def test_holding_preview_low_pad_never_overrides_visibility(client):
             "warnings": [{"code": "mask", "message": "Masker"}],
         }
     )
-    result = verifier.inspect_capture(None, holding=True)
+    result = verifier.inspect_capture(face_image, holding=True)
     assert not result["ready"] and result["warnings"][0]["code"] == "mask"
     assert result["pad_scope"] == "holding_diagnostic"
     verifier.pad_review_enabled = False
-    strict = verifier.inspect_capture(None, holding=True)
+    strict = verifier.inspect_capture(face_image, holding=True)
     assert not strict["ready"] and any(
         w["code"] == "spoof_risk" for w in strict["warnings"]
     )

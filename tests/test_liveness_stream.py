@@ -379,27 +379,27 @@ def test_mask_and_spoof_still_reset_gesture_after_soft_gap(client, monkeypatch):
     assert not first['done'] and second['done'] and not second['passed']
 
 
-def test_demo_preview_pad_uncertainty_keeps_face_quality_separate(client, monkeypatch):
+def test_demo_preview_pad_uncertainty_keeps_face_quality_separate(client, monkeypatch, face_image):
     from types import SimpleNamespace
     verifier=client.app.state.verifier
     verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':True,'face_box':[20,20,100,100],'warnings':[]})
     verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
     verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
-    result=verifier.inspect_capture(None)
+    result=verifier.inspect_capture(face_image)
     assert result['ready'] and result['pad_review_required']
     assert result['warnings'][0]['code']=='pad_review'
     verifier.pad_review_enabled=False
-    strict=verifier.inspect_capture(None)
+    strict=verifier.inspect_capture(face_image)
     assert not strict['ready'] and strict['warnings'][0]['code']=='spoof_risk'
 
 
-def test_demo_preview_pad_review_never_overrides_mask(client):
+def test_demo_preview_pad_review_never_overrides_mask(client, face_image):
     from types import SimpleNamespace
     verifier=client.app.state.verifier
     verifier.visibility=SimpleNamespace(inspect=lambda *args:{'ready':False,'face_box':[20,20,100,100],'warnings':[{'code':'mask','message':'Lepaskan masker'}]})
     verifier.face=SimpleNamespace(faces=lambda image:[[20,20,100,100]])
     verifier.pad=SimpleNamespace(score=lambda *args:{'live_probability':.01})
-    result=verifier.inspect_capture(None)
+    result=verifier.inspect_capture(face_image)
     assert not result['ready'] and result['pad_review_required']
     assert result['warnings'][0]['code']=='mask'
 

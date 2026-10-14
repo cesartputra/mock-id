@@ -15,6 +15,7 @@ function camera(kind = "liveness") {
     drawn: [],
     feedback: [],
     starts: 0,
+    lightChecks: 0,
   };
   let clock = 0;
   const context = vm.createContext({
@@ -22,6 +23,7 @@ function camera(kind = "liveness") {
     FormData,
     AbortController,
     Error,
+    CaptureFeedback,
     stream: {},
     cameraKind: kind,
     cameraToken: 7,
@@ -30,6 +32,7 @@ function camera(kind = "liveness") {
     recording: false,
     cameraCheckAbort: null,
     cameraCheckTimer: null,
+    cameraLightBlocked: false,
     performance: { now: () => clock },
     setTimeout: () => 1,
     clearTimeout: () => {},
@@ -48,6 +51,10 @@ function camera(kind = "liveness") {
     },
     cameraFeedback: new CaptureFeedback(),
     cameraAutoGate: { reset: () => {}, observe: () => false },
+    cameraLightGate: { inspect: () => {
+      events.lightChecks++;
+      return { ready: true, brightness: 120, warnings: [] };
+    } },
     captureBlob: async (maxSide, quality) => {
       assert.equal(maxSide, 1920);
       assert.equal(quality, 0.95);
@@ -92,6 +99,8 @@ function camera(kind = "liveness") {
   context.$("#modal").close = () => {
     context.$("#modal").open = false;
   };
+  vm.runInContext(source.slice(source.indexOf("function checkCameraLight()"),
+    source.indexOf("async function captureBlob(")), context);
   vm.runInContext(
     source.slice(
       source.indexOf("async function monitorCamera("),
@@ -290,4 +299,125 @@ test("valid server face box labels presence independently of quality; missing bo
   assert.match(labels[0], /^Wajah terdeteksi; periksa peringatan$/);
   context.drawFaceDetection(null, [640, 480], false);
   assert.equal(labels.length, 0);
+});
+
+test("dark preview never captures/uploads a frame, resets readiness, and needs fresh server checks after recovery", async () => {
+  const { context, events } = camera();
+  await context.monitorCamera(7);
+  const bright = context.cameraLightGate.inspect;
+  context.cameraLightGate.inspect = () => ({ready:false,
+    warnings:[{code:"too_dark",message:"Ruangan terlalu gelap, pindah ke tempat terang"}]});
+  await context.monitorCamera(7);
+  assert.equal(events.sent.length, 1);
+  assert.equal(events.starts, 0);
+  assert.equal(events.feedback.at(-1).warnings[0].code, "too_dark");
+  assert.equal(events.drawn.at(-1)[0], null);
+  context.cameraLightGate.inspect = bright;
+  context.checkCameraLight();
+  assert.equal(events.feedback.at(-1).warnings.length, 0);
+  assert.equal(events.feedback.at(-1).ready, false);
+  await context.monitorCamera(7);
+  assert.equal(events.starts, 0);
+  await context.monitorCamera(7);
+  assert.equal(events.starts, 1);
+});
+
+test("a bright in-flight preview cannot auto-capture after the camera becomes dark", async () => {
+  const { context, events } = camera("holding");
+  context.inspectAutoBlob = async () => {
+    context.cameraLightGate.inspect = () => ({ready:false,
+      warnings:[{code:"too_dark",message:"Ruangan terlalu gelap, pindah ke tempat terang"}]});
+    return {ready:true,complete:true,warnings:[]};
+  };
+  let captures = 0;
+  context.completeAutomaticPhoto = async () => { captures++; };
+  context.cameraAutoGate.observe = () => true;
+  await context.monitorCamera(7);
+  assert.equal(events.sent.length, 1);
+  assert.equal(captures, 0);
+  assert.equal(events.feedback.at(-1).warnings[0].code, "too_dark");
+});
+
+test("darkness pauses stream once without sending photos or consuming frame sequence, then resumes", async () => {
+  const { context, events } = streamCamera({passed:true});
+  let dark = true, pauses = 0;
+  const bright = context.cameraLightGate.inspect;
+  context.cameraLightGate.inspect = () => dark ? {ready:false,
+    warnings:[{code:"too_dark",message:"Ruangan terlalu gelap, pindah ke tempat terang"}]} : bright();
+  const api = context.api;
+  context.api = async (path, options) => {
+    if (path.endsWith("/pause")) {
+      pauses++;
+      assert.equal(options.body.get("seq"), "0");
+      assert.equal(options.body.get("image"), null);
+      return {paused:true};
+    }
+    return api(path, options);
+  };
+  let waits = 0;
+  context.delay = async () => {
+    if (++waits === 2) {
+      assert.equal(events.sent.length, 0);
+      assert.equal(pauses, 1);
+      dark = false;
+    }
+  };
+  await context.recordChallenges();
+  assert.equal(pauses, 1);
+  assert.deepEqual(events.frames.map(f => f.seq), [0,1,2,3]);
+  assert.equal(events.verifications, 1);
+});
+
+test("cancelling during exposure pause cannot submit a later frame or verify", async () => {
+  const { context, events } = streamCamera();
+  context.cameraLightGate.inspect = () => ({ready:false,warnings:[]});
+  const api = context.api;
+  context.api = async (path, options) => {
+    if (path.endsWith("/pause")) { context.cameraToken++; return {paused:true}; }
+    return api(path, options);
+  };
+  await context.recordChallenges();
+  assert.equal(events.sent.length, 0);
+  assert.equal(events.verifications, 0);
+});
+
+test("white lightbox surrounds only face camera modes and is removed on camera close", async () => {
+  const { LuminanceCheck } = require("../app/view/static/quality-gate.js");
+  const classes = () => {
+    const set = new Set();
+    return {add: c => set.add(c),remove: c => set.delete(c),contains: c => set.has(c)};
+  };
+  const body = {classList:classes()};
+  const modal = {classList:classes(),open:true};
+  const video = {videoWidth:1920,videoHeight:1080,readyState:2,play:async () => {}};
+  const nodes = new Map([["#modal",modal],["#camera-video",video],
+    ["#camera-status",{}],["#camera-prompt",{}]]);
+  let stopped = 0, cleared = [];
+  const context = vm.createContext({
+    document:{body}, $: s => nodes.get(s), CaptureFeedback, LuminanceCheck,
+    cameraToken:0,cameraCheckTimer:1,cameraLightTimer:2,cameraLightBlocked:false,
+    cameraCheckAbort:null,cameraFeedback:null,cameraAutoGate:null,
+    cameraAutoStopped:false, cameraCheckingPaused:false,
+    cameraLightGate:new LuminanceCheck(),cameraKind:null,recording:false,stream:null,
+    busy:false,captureResetting:false,flow:{consent:true},
+    AutoCaptureGate:class {}, prepareCapture:async () => {},render:() => {},icon:() => "",
+    clearTimeout: id => cleared.push(id),
+    navigator:{mediaDevices:{getUserMedia:async () => ({getTracks:() => [{stop:() => stopped++}]})}},
+    monitorCameraLight:() => {}, monitorCamera:async () => {},
+  });
+  context.modal = () => { context.stopCamera(); modal.open = true; };
+  vm.runInContext(source.slice(source.indexOf("function stopCamera()"),
+    source.indexOf("function checkCameraLight()")), context);
+  for (const kind of ["liveness","holding","document"]) {
+    await context.openCamera(kind);
+    assert.equal(body.classList.contains("screen-lightbox"), kind !== "document");
+    assert.equal(modal.classList.contains("screen-lightbox"), kind !== "document");
+    const gate = context.cameraLightGate;
+    context.stopCamera();
+    assert.equal(body.classList.contains("screen-lightbox"), false);
+    assert.equal(modal.classList.contains("screen-lightbox"), false);
+    assert.notEqual(context.cameraLightGate, gate);
+  }
+  assert.equal(stopped, 3);
+  assert.ok(cleared.includes(2));
 });

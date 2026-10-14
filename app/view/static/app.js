@@ -121,6 +121,9 @@ let workspace = {
   cameraToken = 0,
   cameraFeedback = new CaptureFeedback(),
   qualityGate = new QualityGate(),
+  cameraLightGate = new LuminanceCheck(),
+  cameraLightTimer = null,
+  cameraLightBlocked = false,
   cameraAutoGate = null,
   cameraAutoStopped = false,
   cameraCheckTimer = null,
@@ -850,6 +853,11 @@ async function setImage(blob, kind, checked = null, prepared = false) {
 function stopCamera() {
   cameraToken++;
   clearTimeout(cameraCheckTimer);
+  clearTimeout(cameraLightTimer);
+  cameraLightGate = new LuminanceCheck();
+  cameraLightBlocked = false;
+  document.body.classList.remove("screen-lightbox");
+  $("#modal")?.classList.remove("screen-lightbox");
   cameraCheckAbort?.abort();
   cameraCheckAbort = null;
   recording = false;
@@ -880,6 +888,10 @@ async function openCamera(kind) {
     `<p>${kind === "liveness" ? "Ikuti tiga tantangan dari server. Setiap tantangan dimulai dengan wajah netral." : kind === "holding" ? "Pegang KTP di bawah dagu. Tampilkan wajah, tangan, dan seluruh teks kartu." : "Posisikan KTP sampai tulisannya fokus. Jika terlalu dekat dan buram, mundurkan sedikit."}</p><div class="camera-preview"><video id="camera-video" autoplay playsinline muted aria-label="Pratinjau kamera"></video><canvas id="camera-detection" aria-hidden="true"></canvas><div class="camera-overlay ${kind === "holding" ? "holding" : kind === "document" ? "document" : ""}"><span class="camera-face-guide"></span>${kind !== "liveness" ? '<span class="camera-card-guide">KTP</span>' : ""}</div></div><div class="live-challenge-progress" id="live-challenge-progress"></div><div class="camera-live-prompt" id="camera-prompt">Menunggu kamera…</div><div class="capture-feedback checking" id="camera-feedback" role="status" aria-live="polite">${kind === "document" ? "Tahan kartu pada jarak yang membuat tulisan fokus." : "Memeriksa wajah dan risiko foto/layar…"}</div><p class="state-note" id="camera-status">Izinkan kamera jika browser meminta.</p><div class="auto-capture-status">${icon("check")} Pengambilan otomatis · tidak perlu menekan tombol foto atau rekam</div><div class="form-actions"><button class="button" data-close>Batal</button></div>`,
   );
   cameraKind = kind;
+  if (kind === "liveness" || kind === "holding") {
+    document.body.classList.add("screen-lightbox");
+    $("#modal").classList.add("screen-lightbox");
+  }
   cameraAutoGate = kind === "liveness" ? null : new AutoCaptureGate(kind);
   const token = cameraToken;
   try {
@@ -901,12 +913,15 @@ async function openCamera(kind) {
     await video.play();
     if (token !== cameraToken) return;
     $("#camera-status").textContent =
-      `Kamera aktif (${video.videoWidth} × ${video.videoHeight}). Posisikan kartu sampai teks fokus; frame diperiksa di backend lokal.`;
+      `Kamera aktif (${video.videoWidth} × ${video.videoHeight}). ${kind === "liveness" ? "Latar putih membantu pencahayaan wajah. Tatap kamera dan ikuti instruksi gerakan." : "Posisikan kartu sampai teks fokus; frame diperiksa di backend lokal."}`;
     $("#camera-prompt").textContent =
       kind === "liveness"
         ? "Posisikan wajah di tengah bingkai."
         : "Pastikan teks KTP tajam dan wajah tidak tertutup.";
-    const enable = () => monitorCamera(token);
+    const enable = () => {
+      monitorCameraLight(token);
+      void monitorCamera(token);
+    };
     if (video.readyState >= 2) enable();
     else video.onloadeddata = enable;
   } catch (error) {
@@ -916,6 +931,26 @@ async function openCamera(kind) {
         ? "Izin kamera ditolak. Izinkan kamera melalui pengaturan browser untuk merekam liveness."
         : "Kamera tidak tersedia. Gunakan browser lokal dengan webcam yang aktif.";
   }
+}
+function checkCameraLight() {
+  const light = cameraLightGate.inspect($("#camera-video"), cameraKind);
+  if (!light.ready) {
+    cameraLightBlocked = true;
+    cameraAutoGate?.reset();
+    showCameraFeedback(cameraFeedback.update(light, performance.now()));
+    drawFaceDetection(null, null, false);
+  } else if (cameraLightBlocked) {
+    cameraLightBlocked = false;
+    cameraFeedback = new CaptureFeedback();
+    showCameraFeedback({ready: false, warnings: []});
+  }
+  return light;
+}
+function monitorCameraLight(token) {
+  if (token !== cameraToken || !stream || !$("#modal").open) return;
+  checkCameraLight();
+  // Exposure feedback keeps updating while a slower model request is in flight.
+  cameraLightTimer = setTimeout(() => monitorCameraLight(token), 150);
 }
 async function captureBlob(maxSide = 1920, quality = 0.95) {
   const video = $("#camera-video");
@@ -961,7 +996,7 @@ function showCameraFeedback(state) {
   const target = $("#camera-feedback");
   if (!target) return;
   target.className = `capture-feedback ${state.warnings?.length ? "warning" : state.ready ? "clear" : "checking"}`;
-  target.textContent = state.warnings?.length
+  const message = state.warnings?.length
     ? state.warnings.map((w) => w.message).join(" ")
     : state.ready
       ? cameraKind === "document"
@@ -972,6 +1007,7 @@ function showCameraFeedback(state) {
             ? "Wajah terdeteksi. Ikuti instruksi gerakan di atas."
             : "Wajah terlihat jelas. Tantangan liveness dimulai otomatis."
       : "Tahan posisi sebentar untuk pemeriksaan berikutnya…";
+  if (target.textContent !== message) target.textContent = message;
 }
 async function monitorCamera(token) {
   if (
@@ -989,6 +1025,7 @@ async function monitorCamera(token) {
   );
   try {
     const kind = cameraKind;
+    if (!checkCameraLight().ready) return;
     // Server checks actual text/face regions; whole-video blur hints cannot
     // veto a fresh frame or determine whether the card is in focus.
     // Preserve face texture for PAD. Preview and gesture inference must use
@@ -1001,6 +1038,7 @@ async function monitorCamera(token) {
         : await inspectAutoBlob(blob, kind, cameraCheckAbort.signal);
     clearTimeout(timeout);
     if (token !== cameraToken || cameraCheckingPaused) return;
+    if (!checkCameraLight().ready) return;
     drawFaceDetection(
       result.face_box,
       result.image_size,
@@ -1158,13 +1196,38 @@ async function recordChallenges() {
     flow.session = { ...flow.session, ...capture };
     flow.livenessResult = null;
     const started = performance.now();
-    for (let seq = 0; seq < 360; seq++) {
+    let lightPaused = false;
+    for (let seq = 0; seq < 360;) {
       if (token !== cameraToken || flow !== currentFlow || !stream) return;
       if (performance.now() - started > 90_000)
         throw new Error("Pemeriksaan terlalu lama. Ulangi liveness.");
       const frameStarted = performance.now();
-      // Send every sampled frame. Server visibility, PAD and temporal rules
-      // decide whether it contributes evidence; a browser hint cannot skip it.
+      if (!checkCameraLight().ready) {
+        if (!lightPaused) {
+          // Invalidate the unfinished neutral/action pair server-side. Good
+          // completed gestures remain; darkness cannot stand in for a blink.
+          const data = new FormData();
+          data.append("capture_nonce", capture.capture_nonce);
+          data.append("seq", String(seq));
+          cameraCheckAbort = new AbortController();
+          const timeout = setTimeout(() => cameraCheckAbort?.abort(), 8000);
+          try {
+            await api(`/sessions/${flow.session.id}/liveness/pause`, {
+              method: "POST", body: data, signal: cameraCheckAbort.signal,
+            });
+          } finally {
+            clearTimeout(timeout);
+          }
+          if (token !== cameraToken || flow !== currentFlow) return;
+          lightPaused = true;
+          $("#camera-prompt").textContent = "Pemeriksaan dijeda sampai wajah cukup terang";
+        }
+        await delay(150);
+        continue;
+      }
+      lightPaused = false;
+      // Every exposed sample still reaches the server for independent face,
+      // exposure, PAD and temporal checks. The browser cannot approve KYC.
       const blob = await captureBlob(1920, 0.95);
       const data = new FormData();
       data.append("capture_nonce", capture.capture_nonce);
@@ -1193,6 +1256,7 @@ async function recordChallenges() {
       showCameraFeedback(
         cameraFeedback.update(result.feedback, performance.now()),
       );
+      checkCameraLight();
       if (result.done) {
         flow.livenessResult = result;
         if (!result.passed) throw new Error(result.reason);
@@ -1212,6 +1276,7 @@ async function recordChallenges() {
         }
         return;
       }
+      seq++;
       // One request in flight. Camera video remains continuous; inference rate
       // follows CPU capacity, with no fixed duration for individual gestures.
       await delay(Math.max(0, 110 - (performance.now() - frameStarted)));

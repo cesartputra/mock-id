@@ -1,5 +1,13 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Validasi terbaru 3.6.1 — 14 Oktober 2026
+
+Suite penuh Python lulus **351 tes**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Suite JavaScript final lulus **99 tes**; teks konfirmasi preflight yang diperiksa regresi tetap dipertahankan. Syntax/compile dan whitespace diff lulus. Tidak ada bobot/dependency baru.
+
+Dua tes API tambahan membuktikan OCR pemohon menolak gambar tanpa receipt pengambilan otomatis sebelum inferensi atau penambahan percobaan, dan receipt sah terikat digest gambar serta sekali pakai. Tiga tes JavaScript baru memeriksa tiadanya file picker di kedua halaman capture, penolakan input galeri/hasil kamera yang belum lengkap tanpa mengganti state, dan penyimpanan blob asli serta receipt dari capture yang sudah diperiksa. Tes lifecycle kamera diperluas untuk rasio 1920×1080, resize ke 720×1280, kelas dialog/portrait dan cleanup. Regresi CAPTCHA, pemilik/versi sesi, pencahayaan dan gesture tetap lulus.
+
+QA browser memakai harness `.cache/camera361-ui` dengan fungsi kamera/view/CSS aktual, potret astronaut publik dan kartu sintetis bertanda **KARTU UJI — BUKAN KTP**, tanpa webcam, KTP atau data pemohon. Input file berjumlah nol. Preview desktop terukur sekitar 737×415 px pada browser uji, dengan rasio video asli 16:9, instruksi di samping, dan bingkai wajah/KTP terpisah sekitar 25 px. Backdrop tetap putih. Pada 390×844 layout menjadi satu kolom tanpa overflow horizontal; ukuran browser dipulihkan setelah QA. Screenshot chat: `outputs/app-361-camera-only.jpg`, `app-361-camera-large.jpg`, dan `app-361-camera-mobile.jpg`. Ini validasi UI/protokol; tidak membuktikan attestation webcam atau peningkatan akurasi biometrik.
+
 ## Validasi terbaru 3.6.0 — 14 Oktober 2026
 
 Suite penuh final lulus **349 tes Python dan 96 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile dan whitespace diff lulus. Tidak ada bobot atau dependency baru.

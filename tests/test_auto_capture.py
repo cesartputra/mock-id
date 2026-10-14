@@ -24,6 +24,54 @@ def test_actual_auto_document_requires_readable_nik_and_portrait(real_models, kt
     assert not real_models.inspect_auto_capture(face_image,'document')['complete'] # no NIK
 
 
+def public_camera_session(client):
+    from conftest import verification_entry_body
+    client.headers.pop('Authorization', None)
+    headers = {'X-Workspace-Mode': 'public'}
+    assert client.post('/api/auth/guest', headers=headers).status_code == 200
+    response = client.post('/api/sessions', json=verification_entry_body(client, headers), headers=headers)
+    assert response.status_code == 200, response.text
+    return client.app.state.sessions.get(response.json()['id']), headers
+
+
+def test_public_document_rejects_plain_image_without_auto_capture_receipt(client, ktp_image, monkeypatch):
+    state, headers = public_camera_session(client)
+    def forbidden(*_args):
+        raise AssertionError('Plain gallery upload must not run OCR')
+    monkeypatch.setattr(client.app.state.verifier, 'document', forbidden)
+    response = client.post(f'/api/sessions/{state.id}/document', headers=headers,
+        files={'image': ('gallery.jpg', encoded(ktp_image), 'image/jpeg')})
+    assert response.status_code == 422, response.text
+    assert 'kamera' in response.json()['detail']
+    assert state.document is None and state.document_attempts == 0
+
+
+def test_public_automatic_document_receipt_is_image_bound_and_single_use(client, ktp_image):
+    import hashlib
+    import time
+    # Protocol fixture for an already-issued three-reading receipt. This is
+    # not hardware-camera attestation or a claim about OCR accuracy.
+    state, headers = public_camera_session(client)
+    content = encoded(ktp_image)
+    reading = {'fields': {'nik': '1234567890123456', 'name': 'PEMOHON UJI', 'birth': '1990-01-01'}, 'confidence': .99}
+    state.document_probe = {'token': 'bound-receipt', 'revision': state.revision,
+        'digest': hashlib.sha256(content).hexdigest(), 'created': time.monotonic(), 'reading': reading}
+    route = f'/api/sessions/{state.id}/document'
+    changed = ktp_image.copy(); changed[0:10,0:10] = 0
+    wrong = client.post(route, headers=headers, data={'capture_token': 'bound-receipt'},
+        files={'image': ('other.jpg', encoded(changed), 'image/jpeg')})
+    assert wrong.status_code == 409 and state.document is None
+    valid = client.post(route, headers=headers, data={'capture_token': 'bound-receipt'},
+        files={'image': ('camera.jpg', content, 'image/jpeg')})
+    assert valid.status_code == 200, valid.text
+    assert valid.json()['fields']['nik'] == '1234567890123456'
+    assert state.document_digest == hashlib.sha256(content).hexdigest()
+    assert state.document_probe is None
+    replay = client.post(route, headers=headers, data={'capture_token': 'bound-receipt'},
+        files={'image': ('camera.jpg', content, 'image/jpeg')})
+    assert replay.status_code == 409 and state.document_attempts == 1
+
+
 def test_actual_held_photo_without_readable_nik_never_auto_captures(real_models,face_image):
     # Full photo inference is real; astronaut fixture is not a held KTP scene.
     result=real_models.inspect_auto_capture(face_image,'holding',face_image,{'nik':'1234567890123456'})

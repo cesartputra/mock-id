@@ -385,13 +385,15 @@ test("white lightbox surrounds only face camera modes and is removed on camera c
   const { LuminanceCheck } = require("../app/view/static/quality-gate.js");
   const classes = () => {
     const set = new Set();
-    return {add: c => set.add(c),remove: c => set.delete(c),contains: c => set.has(c)};
+    return {add: (...items) => items.forEach(c => set.add(c)),remove: (...items) => items.forEach(c => set.delete(c)),contains: c => set.has(c),toggle: (c,on) => on ? set.add(c) : set.delete(c)};
   };
   const body = {classList:classes()};
   const modal = {classList:classes(),open:true};
   const video = {videoWidth:1920,videoHeight:1080,readyState:2,play:async () => {}};
+  const properties = new Map();
+  const preview = {classList:classes(),style:{setProperty:(k,v) => properties.set(k,v)}};
   const nodes = new Map([["#modal",modal],["#camera-video",video],
-    ["#camera-status",{}],["#camera-prompt",{}]]);
+    ["#camera-status",{}],["#camera-prompt",{}],[".camera-preview",preview]]);
   let stopped = 0, cleared = [];
   const context = vm.createContext({
     document:{body}, $: s => nodes.get(s), CaptureFeedback, LuminanceCheck,
@@ -410,12 +412,19 @@ test("white lightbox surrounds only face camera modes and is removed on camera c
     source.indexOf("function checkCameraLight()")), context);
   for (const kind of ["liveness","holding","document"]) {
     await context.openCamera(kind);
+    assert.equal(modal.classList.contains("camera-dialog"), true);
+    assert.equal(Number(properties.get("--camera-ratio")), 1920/1080);
+    video.videoWidth=720; video.videoHeight=1280; video.onresize();
+    assert.equal(preview.classList.contains("portrait-video"), true);
+    assert.equal(Number(properties.get("--camera-ratio")), 720/1280);
+    video.videoWidth=1920; video.videoHeight=1080; video.onresize();
     assert.equal(body.classList.contains("screen-lightbox"), kind !== "document");
     assert.equal(modal.classList.contains("screen-lightbox"), kind !== "document");
     const gate = context.cameraLightGate;
     context.stopCamera();
     assert.equal(body.classList.contains("screen-lightbox"), false);
     assert.equal(modal.classList.contains("screen-lightbox"), false);
+    assert.equal(modal.classList.contains("camera-dialog"), false);
     assert.notEqual(context.cameraLightGate, gate);
   }
   assert.equal(stopped, 3);

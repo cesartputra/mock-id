@@ -2115,26 +2115,49 @@ dialog.screen-lightbox::backdrop {
   background: #FFFFFF;
   backdrop-filter: none;
 }
-dialog.screen-lightbox {
-  max-width: 800px;
-  max-height: 95dvh;
+dialog.camera-dialog {
+  max-width: 1200px;
+  width: calc(100% - 32px);
+  max-height: 96dvh;
 }
-dialog.screen-lightbox .camera-preview {
-  max-width: 520px;
-  width: min(100%, 48dvh);
-  margin: 12px auto;
+dialog.camera-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog.camera-dialog .modal-head { padding: 16px 20px; flex-shrink: 0; }
+dialog.camera-dialog .modal-content { padding: 20px; overflow-y: auto; min-height: 0; }
+.camera-capture-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 24px; }
+.camera-stage { min-width: 0; align-self: center; }
+.camera-controls { min-width: 0; }
+dialog.camera-dialog .camera-preview {
+  width: min(100%, calc((96dvh - 155px) * var(--camera-ratio, 1.333333)));
+  aspect-ratio: var(--camera-ratio, 1.333333);
+  margin: 0 auto;
   border: 1px solid #e4e4e4;
 }
-dialog.screen-lightbox .modal-head { padding: 16px 20px; }
-dialog.screen-lightbox .modal-content { padding: 20px; }
-dialog.screen-lightbox .live-challenge-progress { margin: 10px 0; gap: 6px; }
-dialog.screen-lightbox .live-challenge-progress span { padding: 6px; font-size: 12px; }
-dialog.screen-lightbox .camera-live-prompt { font-size: 16px; margin: 10px 0; }
-dialog.screen-lightbox .capture-feedback { margin: 10px 0; }
-dialog.screen-lightbox .form-actions { margin-top: 12px; padding-top: 12px; }
+.camera-controls .live-challenge-progress { margin: 10px 0; gap: 6px; flex-direction: column; align-items: stretch; }
+.camera-controls .live-challenge-progress span { padding: 8px; font-size: 12px; }
+.camera-controls .camera-live-prompt { font-size: 16px; margin: 10px 0; }
+.camera-controls .capture-feedback { margin: 10px 0; }
+.camera-controls .form-actions { margin-top: 12px; padding-top: 12px; }
+.modal-content p.camera-position-note { text-align: center; margin: 12px 0 0; font-size: 13px; }
+dialog.camera-dialog .camera-face-guide { width: 26%; height: 66%; }
+dialog.camera-dialog .camera-overlay.holding { display: block; }
+dialog.camera-dialog .camera-overlay.holding .camera-face-guide {
+  position: absolute; left: 37%; top: 8%; width: 26%; height: 46%;
+}
+dialog.camera-dialog .camera-overlay.holding .camera-card-guide {
+  position: absolute; left: 40%; top: 60%; width: 30%; height: auto; aspect-ratio: 1.586;
+}
+dialog.camera-dialog .portrait-video .camera-face-guide { width: 58%; height: 50%; }
+dialog.camera-dialog .portrait-video .camera-overlay.holding .camera-face-guide { left: 26%; top: 8%; width: 48%; height: 40%; }
+dialog.camera-dialog .portrait-video .camera-overlay.holding .camera-card-guide { left: 20%; top: 60%; width: 60%; }
+@media (max-width: 850px) {
+  .camera-capture-layout { grid-template-columns: 1fr; gap: 16px; }
+  dialog.camera-dialog .camera-preview { width: min(100%, calc(44dvh * var(--camera-ratio, 1.333333))); }
+  .camera-controls .live-challenge-progress { flex-direction: row; flex-wrap: wrap; }
+}
 @media (max-width: 550px) {
-  dialog.screen-lightbox .modal-head { padding: 12px 16px; }
-  dialog.screen-lightbox .modal-content { padding: 16px; }
+  dialog.camera-dialog { width: calc(100% - 16px); }
+  dialog.camera-dialog .modal-head { padding: 12px 16px; }
+  dialog.camera-dialog .modal-content { padding: 16px; }
 }
 .camera-overlay {
   position: absolute;

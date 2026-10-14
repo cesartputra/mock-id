@@ -1,5 +1,19 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.6.1 Kamera wajib dan preview lebih besar
+
+Alur pemohon memakai **kamera otomatis** untuk OCR KTP, selfie/liveness, dan foto memegang KTP. Tombol pilihan gambar, file input, dan handler unggah galeri telah dihapus. Foto baru hanya masuk ke state UI setelah pemeriksaan otomatis lengkap; OCR pemohon memerlukan receipt server yang terikat gambar, sesi/versi, masa berlaku dan sekali pakai. Endpoint internal administrator untuk pengujian/integrasi tetap tersedia. Receipt menunjukkan pemeriksaan server, bukan attestation kamera perangkat atau jaminan seluruh injection terdeteksi.
+
+Dialog kamera kini hingga **1200 px** dengan video besar di kiri dan instruksi/status di kanan pada desktop. Preview mengikuti rasio asli kamera, sehingga seluruh bidang video terlihat dan overlay tetap sejajar. Panduan wajah di bagian atas dan KTP setinggi dada dipisahkan, dengan ruang untuk tangan di sisi kartu. Mobile memakai satu kolom dan dialog dapat digulir. Latar putih serta pemeriksaan luminans tetap aktif; tidak ada perubahan ambang skor atau kontrol KYC.
+
+```bash
+git switch feat/screen-lightbox-luminance
+git pull --ff-only
+npm start
+```
+
+Hentikan server lama sebelum menjalankan kembali, lalu reload `http://127.0.0.1:4173`.
+
 ## Pembaruan 3.6.0 Screen lightbox dan pemeriksaan kecerahan
 
 Branch `feat/screen-lightbox-luminance` menambahkan **screen lightbox**: sekeliling pratinjau kamera, area kosong video, dialog, dan latar halaman menjadi putih `#FFFFFF` saat liveness/selfie dan foto memegang KTP dibuka. Tampilan semula kembali ketika kamera ditutup. Ini menggunakan cahaya layar; tidak menaikkan brightness sistem atau mengubah piksel foto/video yang dianalisis. Efek pencahayaan tetap bergantung pada brightness layar, jarak wajah, dan kondisi ruangan.

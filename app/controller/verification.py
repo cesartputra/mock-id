@@ -314,6 +314,8 @@ async def document(session_id: str, request: Request, image: UploadFile = File(.
     sessions, verifier, repository = services(request)
     session = sessions.get(session_id)
     sessions.check_revision(session, request)
+    if actor(request)['role'] == 'applicant' and not capture_token:
+        raise HTTPException(422, 'Gunakan pengambilan otomatis dari kamera untuk membaca KTP.')
     revision = session.revision
     nonce = session.nonce
     live_token = session.liveness_nonce

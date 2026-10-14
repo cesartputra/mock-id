@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Security
+from fastapi import APIRouter, Request, Security
 from fastapi.security import APIKeyHeader
 from app.model.registration import RegistrationRequest
 from app.services.registration import RegistrationService
@@ -14,7 +14,9 @@ def submit(body: RegistrationRequest, request: Request):
 
 @router.get('/registrations/{registration_id}')
 def status(registration_id: str, request: Request):
-    result = request.app.state.repository.registration(registration_id)
-    if not result or result.get('owner_id') != actor(request)['id']:
-        raise HTTPException(404, 'Nomor pendaftaran demo tidak ditemukan pada server lokal ini.')
-    return result
+    return RegistrationService(request.app.state.sessions, request.app.state.repository, request.app.state.workflow, actor(request)).status(registration_id)
+
+
+@router.get('/applications/{application_id}/registration-context')
+def identity_context(application_id: str, request: Request):
+    return RegistrationService(request.app.state.sessions, request.app.state.repository, request.app.state.workflow, actor(request)).identity_context(application_id)

@@ -100,24 +100,25 @@ test("receipt expiry disables continuation without discarding consent", async ()
 
 test("new capture creates no session or destructive reset until preflight completes", async () => {
   for (const accepted of [false, true]) {
-    let resolve, reset = 0;
+    let resolve, reset = 0, registrationReset = 0;
     const calls = [];
     const original = { documentURL: "existing-preview" };
     const context = vm.createContext({ busy: false, captureResetting: false, principal: { role: "applicant" },
       authEpoch: 0, flow: original, selectedApplication: { id: "old" }, stopCamera() {},
       $: () => ({ close() {} }), releasePreviews() { reset++; }, stopDeliveryWatch() {}, rememberApplication() {},
+      clearRegistrationState() { registrationReset++; },
       verificationEntry: { pending: null, open: () => new Promise((reply) => { resolve = reply; }) },
       api: async (path, options) => { calls.push([path, JSON.parse(options.body)]); return { id: "new", application_id: "new-app" }; },
     });
     vm.runInContext(source.slice(source.indexOf("async function newFlow("), source.indexOf("function table(")), context);
     const done = context.newFlow(false);
-    assert.equal(calls.length, 0); assert.equal(reset, 0);
+    assert.equal(calls.length, 0); assert.equal(reset, 0); assert.equal(registrationReset, 0);
     resolve(accepted ? { consent: true, captcha_token: "fixture-receipt" } : null);
     assert.equal(await done, accepted);
     if (accepted) {
       assert.equal(calls[0][0], "/sessions"); assert.equal(calls[0][1].captcha_token, "fixture-receipt");
-      assert.equal(context.flow.consent, true); assert.equal(reset, 1);
-    } else { assert.equal(context.flow, original); assert.equal(calls.length, 0); }
+      assert.equal(context.flow.consent, true); assert.equal(reset, 1); assert.equal(registrationReset, 1);
+    } else { assert.equal(context.flow, original); assert.equal(calls.length, 0); assert.equal(registrationReset, 0); }
   }
 });
 

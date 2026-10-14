@@ -1,5 +1,24 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.4.0 Layout proses dan status dokumen
+
+Branch `feat/verification-consent-captcha` memakai layout proses yang mengikuti referensi iDebKu: penanda langkah bernomor, garis merah, formulir dua kolom, ringkasan dokumen KTP/liveness/foto memegang KTP, dan dialog pendaftaran berhasil dengan kode yang dapat disalin. Formulir registrasi mengambil nama, NIK, tanggal lahir, dan alamat awal melalui endpoint identitas milik pemohon; keputusan harus masih berlaku dan terikat versi bukti terbaru. Formulir tambahan tetap opsional untuk demo integrasi; PDF setelah KYC disetujui tetap diunduh otomatis.
+
+**Status layanan permintaan iDeb** kini memuat tracker **Dokumen Diterima → Dokumen Direview → Selesai**. Hijau berarti tahap selesai, biru sedang diproses, abu-abu belum dikerjakan, oranye perlu tindak lanjut, dan merah belum disetujui. Status, waktu WIB, dan versi bukti berasal dari server. Pemeriksaan manual menampilkan antrean/jadwal; perbaikan capture tidak dianggap penolakan. Tahap terakhir baru selesai pada `SLIK_READY`, bukan saat skor model lolos atau PDF masih disiapkan. Pendaftaran `DEMO-…` yang terikat permohonan mengikuti status `APP-…` terbaru; pratinjau/badan usaha/debitur meninggal dunia tetap mock dan tidak mengarang hasil review/PDF.
+
+Selama menunggu manual/PDF, browser memeriksa status tiap 5 detik. Respons lama dibatalkan ketika halaman/pemilik/pencarian berubah. Pembaruan status tidak mengganti kolom pencarian atau menghilangkan fokus saat nomor sedang diketik. Reservasi kuota dan unduh ulang PDF dapat dilakukan dari halaman status. **Batalkan reservasi** hanya melepas slot manual, bukan menghapus seluruh permohonan. Akses tetap melalui browser pemilik; workspace petugas tetap dilindungi login. CAPTCHA puzzle otomatis dan persetujuan pop-up tetap berlaku.
+
+Untuk mencoba pembaruan ini:
+
+```bash
+git fetch origin
+git switch feat/verification-consent-captcha
+git pull --ff-only
+npm start
+```
+
+Hentikan server sebelumnya, lalu reload `http://127.0.0.1:4173`. Halaman status tersedia pada `/#status`; tidak ada bobot model atau dependency baru. Tampilan desktop memakai dua kolom dan tracker horizontal; layar ponsel memakai satu kolom dan tracker vertikal. Gunakan **Pratinjau alur setelah KYC** di Beranda untuk mencoba formulir dengan data sintetis tanpa mengaku telah diverifikasi.
+
 ## Pembaruan 3.3.0 Persetujuan dan puzzle sebelum verifikasi
 
 Pada branch `feat/verification-consent-captcha`, tombol **Lanjutkan** pada pendaftaran perseorangan membuka dialog berisi daftar pernyataan. Pemohon mencentang **Saya menyatakan telah membaca, memahami, dan menyetujui seluruh pernyataan ini**, lalu menekan **Saya Mengerti**. Tahap berikutnya menampilkan CAPTCHA puzzle: geser potongan ke lubang (mouse, sentuhan, atau tombol panah). Jawaban diperiksa otomatis saat slider dilepas atau berhenti digeser; tidak ada tombol Periksa puzzle. **Lanjut ke verifikasi** aktif setelah jawaban dinyatakan cocok oleh server. Menutup dialog tidak membuat sesi atau menghapus capture sebelumnya. Checkbox tidak lagi ditampilkan pada halaman OCR. Badan usaha dan debitur meninggal dunia tetap memakai jalur dokumen tanpa KYC.

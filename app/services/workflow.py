@@ -11,6 +11,7 @@ from app.model.repository import utcnow
 from app.services.score_policy import ScorePolicy
 from app.services.assessment import OPTIONAL_CONTROLS
 from app.services.authority import AuthorityService
+from app.services.document_progress import document_progress
 
 JAKARTA = ZoneInfo("Asia/Jakarta")
 DEFAULT_FLOW = {
@@ -138,6 +139,7 @@ class WorkflowService:
             "capture_revision": app["revision"],
             "created": app["created"],
             "updated": app["updated"],
+            "document_progress": document_progress(app),
             "name": p.get("name"),
             "nik_masked": p.get("nik_masked"),
             "reason": p.get("reason"),

@@ -3346,3 +3346,103 @@ textarea {
 .routing-explanation summary { cursor: pointer; font-weight: 600; }
 .routing-explanation table { width: 100%; border-collapse: collapse; min-width: 380px; }
 .routing-explanation th, .routing-explanation td { padding: .7rem; text-align: left; border-bottom: 1px solid #e6e6e6; }
+
+/* Numbered public process forms and server-backed document tracking. */
+.public-form-panel.process-page { max-width: 1140px; }
+.process-page .registration-heading { padding-bottom: 14px; margin-bottom: 30px; }
+.process-page .registration-heading > span { width: 58px; height: 58px; font-size: 28px; }
+.process-page .form-actions { justify-content: flex-start; border-top: 0; padding-top: 4px; }
+.public-mode .button.service-primary { background: #337ab7; border-color: #337ab7; color: #fff; }
+.public-mode .button.service-primary:hover { background: #286090; border-color: #286090; }
+.field-help { display: block; font-size: 12px; line-height: 1.6; color: #737373; margin-top: 7px; }
+.registration-form-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.registration-form-columns > div { min-width: 0; }
+.public-mode .field textarea { border: 1px solid #ddd; border-radius: 3px; background: white; font: inherit; font-size: 14px; color: #4b4b4b; line-height: 1.6; width: 100%; padding: 11px 12px; resize: vertical; }
+.registration-data-note { display: flex; gap: 12px; padding: 18px; background: #f4f7fa; border-radius: 4px; line-height: 1.7; }
+.registration-data-note .icon { flex-shrink: 0; margin-top: 3px; color: #337ab7; }
+.registration-data-note strong { font-size: 14px; }
+.registration-data-note p { margin: 5px 0 0; font-size: 13px; color: #676767; }
+.supporting-documents > h2, .registration-review-title { font-size: 19px; margin-bottom: 12px; }
+.supporting-documents > p { color: #737373; font-size: 14px; line-height: 1.7; }
+.supporting-document-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin: 25px 0 35px; }
+.supporting-document-grid article { border: 1px solid #e2e2e2; border-radius: 5px; padding: 20px; text-align: center; min-width: 0; }
+.supporting-document-grid h3 { font-size: 13px; text-transform: uppercase; line-height: 1.6; min-height: 42px; }
+.supporting-document-image { display: grid; place-items: center; height: 158px; margin: 15px 0; background: #f7f9fb; border-radius: 4px; overflow: hidden; }
+.supporting-document-image svg { width: 180px; max-width: 100%; height: 140px; }
+.supporting-document-image img { width: 100%; height: 100%; object-fit: contain; }
+.supporting-document-grid .badge { white-space: normal; line-height: 1.5; }
+.supporting-document-grid p { margin: 12px 0 0; color: #737373; font-size: 12px; line-height: 1.7; }
+.registration-success { text-align: center; padding: 15px 5px; }
+.registration-success h2 { font-size: 27px; margin-bottom: 22px; }
+.registration-success p { color: #737373; line-height: 1.7; margin: 16px 0 8px; }
+.registration-success > strong { display: block; font-size: 21px; overflow-wrap: anywhere; color: #414141; }
+.registration-success .buttons { justify-content: center; margin: 25px 0; }
+.registration-success > small { color: #737373; line-height: 1.7; }
+.public-mode .button.success-button { background: #239849; border-color: #239849; color: white; }
+.service-status-heading { text-align: center; margin-bottom: 36px; }
+.service-status-heading h1 { font-size: clamp(22px, 3vw, 31px); text-transform: uppercase; line-height: 1.4; }
+.service-status-heading p { margin: 14px 0 0; font-size: 14px; line-height: 1.7; color: #737373; }
+.service-status-lookup { max-width: 760px; margin: 0 auto 32px; display: grid; grid-template-columns: 1fr auto; gap: 0 16px; align-items: start; }
+.service-status-lookup .field { margin-bottom: 0; }
+.service-status-lookup > button { margin-top: 28px; min-height: 44px; }
+.service-status-lookup .text-error { grid-column: 1 / -1; }
+.service-request-summary { max-width: 760px; margin: 32px auto; }
+.service-readonly { min-height: 44px; border: 1px dashed #d2d2d2; border-radius: 3px; padding: 12px; font-size: 14px; color: #414141; line-height: 1.5; overflow-wrap: anywhere; }
+.service-status-empty { text-align: center; color: #737373; font-size: 14px; padding: 40px 15px; line-height: 1.8; background: #f7f9fb; border-radius: 5px; }
+.document-status-card { --status-done: #209849; --status-current: #337ab7; --status-pending: #969ba4; --status-attention: #b27624; --status-failed: #bc3039; background: white; border: 1px solid #e2e5e9; border-radius: 14px; padding: 32px 28px 24px; box-shadow: 0 6px 24px #24364b09; margin: 26px 0; }
+.document-status-card > h2 { font-size: clamp(21px, 2.5vw, 27px); color: #122741; letter-spacing: -0.3px; }
+.document-status-intro { margin: 10px 0 0; font-size: 14px; color: #737373; line-height: 1.7; }
+.document-timeline { list-style: none; padding: 0; margin: 35px 0 30px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+.document-stage { --stage-color: var(--status-pending); position: relative; text-align: center; min-width: 0; padding: 0 12px; }
+.document-stage.done { --stage-color: var(--status-done); }
+.document-stage.current { --stage-color: var(--status-current); }
+.document-stage.attention { --stage-color: var(--status-attention); }
+.document-stage.failed { --stage-color: var(--status-failed); }
+.document-stage:not(:last-child)::after { content: ""; position: absolute; top: 102px; left: calc(50% + 80px); width: calc(100% - 160px); height: 6px; background: #d5d8de; border-radius: 5px; }
+.document-stage-number { display: block; font-size: 15px; color: #596273; margin-bottom: 20px; }
+.document-stage-ring { position: relative; z-index: 1; border: 12px solid var(--stage-color); border-radius: 50%; width: 136px; height: 136px; margin: 0 auto 22px; display: grid; place-items: center; color: var(--stage-color); background: white; }
+.document-stage-ring .icon { width: 53px; height: 53px; stroke-width: 2; }
+.document-stage.done .document-stage-ring .icon { background: var(--stage-color); color: white; border-radius: 50%; padding: 11px; width: 64px; height: 64px; }
+.document-stage.failed .document-stage-ring > span { font-size: 75px; line-height: 1; }
+.document-stage-state { display: block; text-transform: uppercase; color: var(--stage-color); font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin: 0 0 9px; }
+.document-stage.pending .document-stage-state { color: #696f79; }
+.document-stage h3 { font-size: clamp(17px, 1.9vw, 22px); color: #122741; line-height: 1.4; }
+.document-stage.done h3 { color: var(--status-done); }
+.document-stage p { color: #68717d; font-size: 13px; line-height: 1.7; margin: 10px auto 0; max-width: 260px; }
+.document-stage time { display: block; color: #596273; font-size: 12px; line-height: 1.6; margin-top: 8px; }
+.document-status-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 20px; border-top: 1px solid #eef0f2; padding-top: 23px; font-size: 12px; color: #68717d; }
+.document-status-legend span { display: inline-flex; gap: 7px; align-items: center; }
+.document-status-legend span::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--status-pending); }
+.document-status-legend .done::before { background: var(--status-done); }
+.document-status-legend .current::before { background: var(--status-current); }
+.document-status-legend .attention::before { background: var(--status-attention); }
+.document-status-legend .failed::before { background: var(--status-failed); }
+.document-status-updated { color: #737373; font-size: 11px; line-height: 1.7; margin: 18px 0 0; text-align: center; }
+.service-status-note { padding: 20px 22px; background: #f5f8fb; border-left: 3px solid #337ab7; font-size: 14px; line-height: 1.8; color: #596273; margin: 25px 0; }
+.service-status-note p { margin-top: 8px; }
+.service-status-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+@media (max-width: 700px) {
+  .registration-form-columns, .supporting-document-grid { grid-template-columns: 1fr; gap: 0; }
+  .supporting-document-grid article { margin-bottom: 16px; }
+  .service-status-heading { text-align: left; margin-bottom: 24px; }
+  .service-status-lookup { grid-template-columns: 1fr; }
+  .service-status-lookup > button { margin-top: 15px; justify-self: start; }
+  .document-status-card { padding: 24px 18px; border-radius: 9px; }
+  .document-timeline { grid-template-columns: 1fr; gap: 0; margin: 28px 0 12px; }
+  .document-stage { padding: 0 0 30px 94px; text-align: left; min-height: 130px; }
+  .document-stage-number { font-size: 12px; margin-bottom: 8px; }
+  .document-stage-ring { position: absolute; left: 0; top: 4px; width: 74px; height: 74px; border-width: 7px; margin: 0; }
+  .document-stage-ring .icon { width: 30px; height: 30px; }
+  .document-stage.done .document-stage-ring .icon { width: 38px; height: 38px; padding: 7px; }
+  .document-stage.failed .document-stage-ring > span { font-size: 43px; }
+  .document-stage:not(:last-child)::after { top: 84px; left: 34px; height: calc(100% - 84px); width: 5px; }
+  .document-stage:last-child { padding-bottom: 10px; }
+  .document-stage h3 { font-size: 17px; }
+  .document-stage p { margin: 7px 0 0; font-size: 12px; max-width: none; }
+  .document-stage time { font-size: 11px; }
+  .document-stage-state { font-size: 10px; }
+  .document-status-legend { justify-content: flex-start; font-size: 11px; gap: 10px 14px; }
+  .service-status-actions .button { flex: 1 1 100%; }
+  .registration-success h2 { font-size: 22px; }
+  .process-page .registration-heading > span { width: 49px; height: 49px; font-size: 24px; }
+}

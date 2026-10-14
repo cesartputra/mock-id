@@ -85,7 +85,7 @@ async def lifespan(app):
 def create_app(data_directory=DATA):
     app = FastAPI(
         title="mock-id local identity verification",
-        version="3.3.0",
+        version="3.4.0",
         lifespan=lifespan,
         telemetry={
             "tracing": False,

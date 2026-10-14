@@ -85,10 +85,10 @@ function applicationPanel(app, operator = false) {
           )
           .join("")}</div>`
       : ""
-  }<div class="buttons">${app.review_note_evidence ? `<button class="button" data-evidence="${esc(app.review_note_evidence)}">Lihat catatan helpdesk</button>` : ""}${!operator && manual ? `<button class="button primary" data-try-today="${app.id}">Cek kuota hari ini lagi</button>` : ""}${!operator && app.state === "MANUAL_SCHEDULED" ? `<button class="button" data-cancel-case="${app.id}">Batalkan reservasi</button>` : ""}${!operator && approvedStates.includes(app.state) ? `<button class="button primary" data-slik="${app.id}">${app.state === "SLIK_READY" ? "Unduh ulang PDF SLIK demo" : "Coba siapkan PDF kembali"}</button>` : ""}${!operator && ["CAPTURE_RETRY", "TECHNICAL_PENDING", "VERIFYING"].includes(app.state) && (!flow || page === "result") ? `<button class="button primary" data-resume-capture="${app.id}">Lanjutkan capture baru</button>` : ""}${operator && principal?.role === "helpdesk" && app.state === "MANUAL_SCHEDULED" ? `<button class="button primary" data-start-review="${app.id}">Mulai pemeriksaan</button>` : ""}</div>${operator && principal?.role === "helpdesk" && app.state === "MANUAL_IN_REVIEW" ? `<form id="manual-review-form" data-id="${app.id}" data-revision="${app.capture_revision}"><div class="field"><label for="manual-note">Dasar keputusan dan catatan pemeriksaan</label><textarea id="manual-note" name="note" required minlength="10" maxlength="1000"></textarea></div><label class="scenario"><input type="checkbox" name="identity_review"> Saya memeriksa bukti identitas dengan prosedur manual demo (bukan validasi Dukcapil).</label><label class="scenario"><input type="checkbox" name="authority_review"> Saya memeriksa pernyataan dan kewenangan pemohon untuk identitas yang diminta.</label><div class="buttons"><button class="button primary" name="decision" value="approve">Setujui untuk hasil sintetis</button><button class="button danger" name="decision" value="reject">Tolak permohonan ini</button><button class="button" name="decision" value="repair">Minta perbaikan</button></div><p class="text-error" id="step-error" role="alert"></p></form>` : ""}</section>`;
+  }<div class="buttons">${app.review_note_evidence ? `<button class="button" data-evidence="${esc(app.review_note_evidence)}">Lihat catatan helpdesk</button>` : ""}${!operator && manual ? `<button class="button primary" data-try-today="${app.id}">Cek kuota hari ini lagi</button>` : ""}${!operator && app.state === "MANUAL_SCHEDULED" ? `<button class="button" data-cancel-case="${app.id}">Batalkan reservasi</button>` : ""}${!operator && approvedStates.includes(app.state) ? `<button class="button" data-persistent-registration="${app.id}">Lengkapi data registrasi demo</button><button class="button primary" data-slik="${app.id}">${app.state === "SLIK_READY" ? "Unduh ulang PDF SLIK demo" : "Coba siapkan PDF kembali"}</button>` : ""}${!operator && ["CAPTURE_RETRY", "TECHNICAL_PENDING", "VERIFYING"].includes(app.state) && (!flow || page === "result") ? `<button class="button primary" data-resume-capture="${app.id}">Lanjutkan capture baru</button>` : ""}${operator && principal?.role === "helpdesk" && app.state === "MANUAL_SCHEDULED" ? `<button class="button primary" data-start-review="${app.id}">Mulai pemeriksaan</button>` : ""}</div>${operator && principal?.role === "helpdesk" && app.state === "MANUAL_IN_REVIEW" ? `<form id="manual-review-form" data-id="${app.id}" data-revision="${app.capture_revision}"><div class="field"><label for="manual-note">Dasar keputusan dan catatan pemeriksaan</label><textarea id="manual-note" name="note" required minlength="10" maxlength="1000"></textarea></div><label class="scenario"><input type="checkbox" name="identity_review"> Saya memeriksa bukti identitas dengan prosedur manual demo (bukan validasi Dukcapil).</label><label class="scenario"><input type="checkbox" name="authority_review"> Saya memeriksa pernyataan dan kewenangan pemohon untuk identitas yang diminta.</label><div class="buttons"><button class="button primary" name="decision" value="approve">Setujui untuk hasil sintetis</button><button class="button danger" name="decision" value="reject">Tolak permohonan ini</button><button class="button" name="decision" value="repair">Minta perbaikan</button></div><p class="text-error" id="step-error" role="alert"></p></form>` : ""}</section>`;
 }
 function deliveryView() {
-  return `${head("Hasil verifikasi", "PDF SLIK demo diunduh otomatis setelah keputusan disetujui dan laporan tersedia.", "", "HASIL PENDAFTARAN")}${selectedApplication ? applicationPanel(selectedApplication) : '<section class="public-form-panel"><p>Belum ada hasil aktif. Mulai melalui Pendaftaran atau masukkan nomor permohonan pada Status layanan.</p><button class="button primary" data-page="registration">Pendaftaran</button></section>'}`;
+  return `<section class="public-form-panel process-page">${registrationHeader(3, "Proses permohonan dan hasil", "PDF SLIK demo diunduh otomatis setelah keputusan disetujui dan laporan tersedia.")}${selectedApplication ? processTracker(selectedApplication.document_progress) + applicationPanel(selectedApplication) + '<div class="form-actions"><button class="button service-primary" data-page="status">Status layanan permintaan</button><button class="button" data-page="home">Kembali ke beranda</button></div>' : '<p>Belum ada hasil aktif. Mulai melalui Pendaftaran atau masukkan nomor permohonan pada Status layanan.</p><button class="button primary" data-page="registration">Pendaftaran</button>'}</section>`;
 }
 function operatorQueueView() {
   const rows = applicationRows.filter(
@@ -131,8 +131,10 @@ function adminMetricsView() {
     )}</div><p>Kasus menunggu: ${m.waiting_cases} · waktu tunggu rata-rata ${m.wait_seconds_mean === null ? "belum tersedia" : (m.wait_seconds_mean / 3600).toFixed(1) + " jam"}</p><p>Latensi verifikasi rata-rata: ${m.verification_latency_ms_mean === null ? "belum tersedia" : (m.verification_latency_ms_mean / 1000).toFixed(2) + " detik"} · observasi retry: ${m.retry_observations} · gangguan teknis: ${m.technical_results}</p><p class="state-note">${esc(m.scope)}</p></section>`;
 }
 async function showApplication(id) {
+  const keepStatus = page === "status" && serviceStatus?.application?.id === id;
   selectedApplication = await api("/applications/" + id);
-  page = ["helpdesk", "admin"].includes(principal?.role) ? "queue" : "result";
+  if (keepStatus) serviceStatus.application = selectedApplication;
+  page = ["helpdesk", "admin"].includes(principal?.role) ? "queue" : keepStatus ? "status" : "result";
   history.replaceState(null, "", "#" + page);
   render();
   if (principal?.role === "applicant")
@@ -242,16 +244,23 @@ async function observeDelivery(app) {
     if (
       generation !== deliveryWatchEpoch ||
       ownerEpoch !== authEpoch ||
-      !["verify", "result"].includes(page)
+      !["verify", "result", "status"].includes(page)
     )
       return;
     try {
       const fresh = await api("/applications/" + app.id);
       if (generation !== deliveryWatchEpoch || ownerEpoch !== authEpoch) return;
+      const changed = selectedApplication?.updated !== fresh.updated ||
+        selectedApplication?.state !== fresh.state ||
+        selectedApplication?.capture_revision !== fresh.capture_revision;
       selectedApplication = fresh;
+      if (serviceStatus?.application?.id === fresh.id) serviceStatus.application = fresh;
       if (flow?.result?.application?.id === app.id)
         flow.result.application = fresh;
-      render();
+      if (changed) {
+        if (page === "status") updateServiceStatus();
+        else render();
+      }
       if (fresh.state === "SLIK_READY") {
         await deliverPdf(fresh);
         return;
@@ -280,6 +289,7 @@ document.addEventListener("click", async (event) => {
     if (button.hasAttribute("data-logout")) {
       await api("/auth/logout", { method: "POST" });
       authEpoch++;
+      clearRegistrationState();
       stopDeliveryWatch();
       stopCamera();
       $("#modal").close();
@@ -324,13 +334,15 @@ document.addEventListener("click", async (event) => {
       await showApplication(button.dataset.startReview);
     } else if (button.dataset.slik) {
       const id = button.dataset.slik;
+      const keepStatus = page === "status" && serviceStatus?.application?.id === id;
       let app = await api("/applications/" + id);
       if (app.state !== "SLIK_READY")
         app = await api("/applications/" + id + "/slik", { method: "POST" });
       selectedApplication = app;
+      if (keepStatus) serviceStatus.application = app;
       rememberApplication(id);
-      page = "result";
-      history.replaceState(null, "", "#result");
+      page = keepStatus ? "status" : "result";
+      history.replaceState(null, "", "#" + page);
       render();
       stopDeliveryWatch();
       if (app.state === "SLIK_READY") await deliverPdf(app, true);
@@ -349,13 +361,7 @@ document.addEventListener("click", async (event) => {
       selectedApplication = await api(
         "/applications/" + button.dataset.persistentRegistration,
       );
-      applicationContext = { debtorType: "individual", preview: false };
-      registrationDraft = {
-        ...draftDefaults(false),
-        name: selectedApplication.name,
-      };
-      registrationStep = 0;
-      await navigate("postkyc");
+      await startPostKycRegistration(selectedApplication);
     }
   } catch (error) {
     errorMessage(error);
@@ -379,6 +385,7 @@ document.addEventListener("submit", async (event) => {
     if (form.id === "account-form") {
       const body = { login: data.login, password: data.password };
       authEpoch++;
+      clearRegistrationState();
       principal = (
         await api("/auth/login", { method: "POST", body: JSON.stringify(body) })
       ).principal;

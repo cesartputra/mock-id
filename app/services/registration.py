@@ -2,6 +2,7 @@
 import secrets
 from fastapi import HTTPException
 from app.model.repository import utcnow
+from app.services.document_progress import registration_progress
 
 
 class RegistrationService:
@@ -9,6 +10,28 @@ class RegistrationService:
         self.sessions = sessions
         self.repository = repository
         self.workflow, self.actor = workflow, actor
+
+    def status(self, registration_id):
+        record = self.repository.registration(registration_id)
+        if not record or not self.actor or record.get('owner_id') != self.actor['id']:
+            raise HTTPException(404, 'Nomor pendaftaran demo tidak ditemukan pada server lokal ini.')
+        application = self.workflow.snapshot(record['application_id'], self.actor) if record.get('application_id') else None
+        return {**record, 'application': application,
+                'document_progress': application['document_progress'] if application else registration_progress(record)}
+
+    def identity_context(self, application_id):
+        import time
+        with self.repository.connect() as con:
+            application = self.workflow.get(con, application_id)
+            # This endpoint returns an applicant's own identity, never a staff override.
+            self.workflow.authorize(con, application, self.actor)
+            decision = application['payload'].get('decision')
+            if (application['state'] not in ['AUTO_APPROVED', 'MANUAL_APPROVED', 'SLIK_PENDING', 'SLIK_READY']
+                    or not decision or decision['revision'] != application['revision']
+                    or decision['expires'] <= time.time()):
+                raise HTTPException(409, 'Identitas pendaftaran memerlukan keputusan terbaru yang masih berlaku.')
+            identity = self.workflow.identity(con, application)
+            return {key: identity.get(key, '') for key in ['name', 'nik', 'birth', 'address']}
 
     def submit(self, body):
         if self.workflow and self.workflow.policy.mode!='demo':raise HTTPException(503,'Formulir pendaftaran ini hanya adapter demo. Gunakan integrasi aplikasi induk berwenang untuk produksi.')

@@ -1,5 +1,13 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Validasi terbaru 3.5.1 — 14 Oktober 2026
+
+Suite penuh lulus **334 tes Python dan 88 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile dan whitespace diff lulus. Tes CAPTCHA server memeriksa bahwa jawaban salah langsung membatalkan challenge lama, puzzle baru berbeda, pemilik lain tidak terpengaruh, serta receipt tetap terikat pemilik dan sekali pakai.
+
+Tes class UI aktual memeriksa reset slider/potongan ke nol, gambar/challenge baru otomatis, persetujuan yang dipertahankan, challenge kedaluwarsa yang diperbarui, server error tanpa loop refresh, receipt invalid yang tidak melanjutkan, serta respons sukses setelah pembatalan yang diabaikan. Integrasi class dengan `newFlow` membuktikan jawaban sah otomatis membuat tepat satu sesi, tanpa tombol/click lanjut. Pengujian pointer-release dan debounce keyboard tetap lulus.
+
+QA browser memakai database terpisah `.cache/captcha351-data`: pendaftaran → persetujuan → CAPTCHA. Puzzle/instruksi baru dan ketiadaan tombol Lanjut ke verifikasi diperiksa melalui UI; screenshot `outputs/app-351-captcha-auto.jpg` tersimpan pada workspace chat. Puzzle browser tidak diselesaikan; alur salah/benar dan pembuatan sesi diuji pada fixture protokol/API disposable. Tidak ada KTP, kamera pribadi atau layanan CAPTCHA eksternal yang dipakai.
+
 ## Validasi terbaru 3.5.0 — 14 Oktober 2026
 
 Suite penuh lulus **333 tes Python dan 84 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile check juga lulus. Delapan belas tes Python baru mencakup penghapusan foto yang mempertahankan identitas/hasil/PDF, seluruh revisi serta sesi RAM, penghapusan penuh dan isolasi permohonan lain dengan owner/NIK sama, reservasi/hasil/registrasi/cache terkait, otorisasi admin, konfirmasi/versi stale, native work/PDF aktif, storage tidak tersedia, crop perspektif native terenkripsi dan retensi/binding, idempotensi crop lama, penolakan pemulihan foto yang dihapus saat OCR berjalan, serta hasil gagal yang tetap dapat ditelusuri lewat pengikat sesi setelah sesi/bukti kedaluwarsa. Setelah penguatan fixture hasil orphan, seluruh 18 tes operator dijalankan kembali dan lulus.

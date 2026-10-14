@@ -95,12 +95,8 @@ class VerificationEntryService:
                 raise HTTPException(409, "Puzzle tidak berlaku. Muat puzzle baru.")
             challenge.attempts += 1
             if abs(offset - challenge.target_x) > 5:
-                exhausted = challenge.attempts >= 3
-                if exhausted:
-                    del self.challenges[challenge_id]
-                raise HTTPException(409 if exhausted else 422,
-                                    "Muat puzzle baru untuk mencoba lagi." if exhausted
-                                    else "Posisi potongan belum sesuai. Geser dan periksa kembali.")
+                del self.challenges[challenge_id]
+                raise HTTPException(422, "Posisi potongan belum sesuai. Muat puzzle baru untuk mencoba lagi.")
             del self.challenges[challenge_id]
             token = secrets.token_urlsafe(32)
             self.receipts[token] = PuzzleReceipt(owner_id, time.monotonic() + RECEIPT_TTL)

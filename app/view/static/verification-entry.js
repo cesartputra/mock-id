@@ -6,7 +6,6 @@ class VerificationEntryGate {
     Object.assign(this, { api, showDialog, getDialog, escape });
     this.pending = null;
     this.generation = 0;
-    this.expiryTimer = null;
     this.verifyTimer = null;
   }
 
@@ -18,6 +17,7 @@ class VerificationEntryGate {
       this.showConsent();
       this.dialog = this.getDialog();
       this.onInput = (event) => {
+        if (!this.pending) return;
         if (event.target.id === "entry-puzzle-slider") {
           this.movePiece();
           if (!this.pending?.dragging) this.scheduleCheck();
@@ -33,7 +33,6 @@ class VerificationEntryGate {
         if (button.hasAttribute("data-entry-consent-next")) this.acknowledge();
         if (button.hasAttribute("data-entry-back")) this.back();
         if (button.hasAttribute("data-entry-reload")) this.loadPuzzle();
-        if (button.hasAttribute("data-entry-continue")) this.continue();
         if (button.hasAttribute("data-entry-cancel")) this.cancel();
       };
       this.onClose = () => { if (!this.dialog.open) this.finish(null); };
@@ -97,14 +96,14 @@ class VerificationEntryGate {
             <div class="entry-captcha-heading"><h3 id="entry-captcha-title">Selesaikan puzzle</h3>
               <button type="button" class="button link" id="entry-puzzle-reload" data-entry-reload>Ganti puzzle</button>
             </div>
-            <p id="entry-puzzle-help">Geser potongan ke lubang yang sesuai. Puzzle diperiksa otomatis saat slider dilepas atau berhenti digeser. Tombol panah pada keyboard juga dapat digunakan.</p>
+            <p id="entry-puzzle-help">Geser potongan ke lubang yang sesuai. Puzzle diperiksa otomatis saat slider dilepas atau berhenti digeser. Jika salah, slider kembali ke awal dan puzzle berganti. Jika benar, verifikasi dimulai otomatis. Tombol panah pada keyboard juga dapat digunakan.</p>
             <div id="entry-puzzle"></div>
             <p id="entry-puzzle-status" class="entry-puzzle-status" role="status" aria-live="polite"></p>
           </section>
           <p class="text-error" id="entry-error" role="alert"></p>
         </div>
         <div class="form-actions"><button type="button" class="button" data-entry-back>Kembali</button>
-          <button type="button" class="button primary" id="entry-continue" data-entry-continue disabled>Lanjut ke verifikasi</button>
+          <span class="micro">Lanjut otomatis setelah puzzle sesuai.</span>
         </div>
       </div>`);
     this.loadPuzzle();
@@ -112,7 +111,7 @@ class VerificationEntryGate {
   back() {
     const state = this.pending;
     if (!state) return;
-    this.generation++; clearTimeout(this.expiryTimer); clearTimeout(this.verifyTimer);
+    this.generation++; clearTimeout(this.verifyTimer);
     Object.assign(state, { step: "consent", receipt: null, challenge: null,
       loading: false, solving: false, dragging: false, lastCheckedOffset: null });
     this.showConsent(); this.update();
@@ -128,8 +127,6 @@ class VerificationEntryGate {
       this.node("#entry-consent-next").disabled = !this.node("#verification-consent").checked;
       return;
     }
-    this.node("#entry-continue").disabled = state.loading || state.solving ||
-      !state.consent || !state.receipt;
     this.node("#entry-puzzle-reload").disabled = state.loading || state.solving;
     const slider = this.node("#entry-puzzle-slider");
     if (slider) slider.disabled = state.loading || state.solving || !state.challenge || !!state.receipt;
@@ -150,16 +147,15 @@ class VerificationEntryGate {
       if (offset !== state.lastCheckedOffset) this.solve();
     }, delay);
   }
-  async loadPuzzle() {
+  async loadPuzzle(notice = "") {
     const state = this.pending;
     if (!state || state.step !== "captcha" || state.loading || state.solving) return;
-    clearTimeout(this.expiryTimer);
     clearTimeout(this.verifyTimer);
     const generation = ++this.generation;
     state.loading = true; state.receipt = null; state.challenge = null;
     state.dragging = false; state.lastCheckedOffset = null;
     this.node("#entry-puzzle").innerHTML = '<p>Menyiapkan puzzle…</p>';
-    this.message(""); this.message("", true); this.update();
+    this.message(""); this.message(notice, true); this.update();
     try {
       const c = await this.api("/verification-entry/challenge", { method: "POST" });
       if (this.pending !== state || generation !== this.generation) return;
@@ -172,6 +168,8 @@ class VerificationEntryGate {
         </div>
         <label class="entry-slider-label" for="entry-puzzle-slider">Geser untuk menyusun puzzle</label>
         <input type="range" id="entry-puzzle-slider" min="0" max="${c.max_offset}" step="1" value="0" aria-describedby="entry-puzzle-help">`;
+      this.node("#entry-puzzle-slider").value = "0";
+      this.movePiece();
       this.message("Puzzle siap. Geser potongan; pemeriksaan berjalan otomatis.");
     } catch (error) {
       if (this.pending === state && generation === this.generation) this.message(error.message, true);
@@ -192,17 +190,22 @@ class VerificationEntryGate {
         offset: state.lastCheckedOffset,
       }) });
       if (this.pending !== state || generation !== this.generation) return;
+      if (!receipt.captcha_token || typeof receipt.captcha_token !== "string" || !(receipt.expires_in > 0))
+        throw new Error("Respons CAPTCHA belum sah. Ganti puzzle dan coba kembali.");
       state.receipt = receipt.captcha_token;
-      this.message("Puzzle sesuai. Anda dapat melanjutkan ke verifikasi identitas.");
-      this.expiryTimer = setTimeout(() => {
-        if (this.pending !== state) return;
-        state.receipt = null; state.challenge = null; this.update();
-        this.message("CAPTCHA kedaluwarsa. Tekan Ganti puzzle untuk mencoba kembali.", true);
-      }, receipt.expires_in * 1000);
+      state.solving = false;
+      this.message("Puzzle sesuai. Memulai verifikasi identitas…");
+      this.continue();
     } catch (error) {
       if (this.pending !== state || generation !== this.generation) return;
-      this.message(error.message, true); this.message("Puzzle belum selesai.");
-      if (error.status === 409) { state.challenge = null; }
+      if (error.status === 422 || error.status === 409) {
+        state.solving = false;
+        await this.loadPuzzle(error.status === 422
+          ? "Posisi potongan belum sesuai. Slider direset dan puzzle baru disiapkan."
+          : "Puzzle sudah tidak berlaku. Slider direset dan puzzle baru disiapkan.");
+      } else {
+        this.message(error.message, true); this.message("Pemeriksaan belum selesai. Coba lagi atau ganti puzzle.");
+      }
     } finally {
       if (this.pending === state && generation === this.generation) { state.solving = false; this.update(); }
     }
@@ -217,7 +220,7 @@ class VerificationEntryGate {
   finish(value) {
     const state = this.pending;
     if (!state) return;
-    this.pending = null; this.generation++; clearTimeout(this.expiryTimer); clearTimeout(this.verifyTimer);
+    this.pending = null; this.generation++; clearTimeout(this.verifyTimer);
     this.dialog.removeEventListener("input", this.onInput);
     this.dialog.removeEventListener("change", this.onInput);
     this.dialog.removeEventListener("click", this.onClick);

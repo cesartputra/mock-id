@@ -1,5 +1,13 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.5.1 CAPTCHA reset dan lanjut otomatis
+
+Jawaban puzzle diperiksa setelah slider dilepas atau keyboard berhenti digeser. **Posisi salah** membatalkan challenge lama di server, mengembalikan slider/potongan ke awal, dan memuat **gambar serta challenge baru otomatis**. Persetujuan tetap tersimpan, sehingga tidak perlu mencentang ulang. Puzzle kedaluwarsa/tidak berlaku juga dimuat ulang; gangguan koneksi/server ditampilkan agar tidak memicu loop permintaan.
+
+**Posisi benar** langsung menutup dialog dan membuat sesi verifikasi memakai receipt server sekali pakai. Tombol **Lanjut ke verifikasi** dihapus. Bukti/flow lama baru diganti setelah persetujuan dan CAPTCHA berhasil. Pembatalan, kembali ke persetujuan, respons lama dan event slider ganda tidak dapat membuat sesi tambahan. Validasi receipt, kepemilikan, retensi, consent dan rate limit server tetap berlaku. Tidak ada dependency/model baru.
+
+Sesudah `git pull --ff-only` pada branch `feat/verification-consent-captcha`, hentikan server lama, jalankan `npm start`, lalu reload `http://127.0.0.1:4173`. Dialog CAPTCHA yang sedang terbuka perlu dibuka kembali sesudah reload.
+
 ## Pembaruan 3.5.0 Workspace operator, clean data dan crop KTP
 
 Workspace operator mengikuti tampilan halaman pemohon: header iDebKu demo, halaman putih, judul bernomor dengan garis merah, dan **menu operator di navbar atas**. Administrator memperoleh Ringkasan, Data pemohon, Jejak aktivitas, serta Modul & konfigurasi; helpdesk tetap hanya memperoleh kasus yang berwenang diaksesnya. Tabel Data pemohon mencakup permohonan yang sudah selesai maupun yang membutuhkan review, dengan pencarian dan filter status. Navbar dan tabel dapat digeser mendatar pada ponsel.

@@ -26,7 +26,7 @@ function gate(api) {
   return { instance, dialog, node: (id) => dialog.querySelector(id), content: () => content };
 }
 
-test("dialog requires both checked consent and a server-verified puzzle", async () => {
+test("checked consent and a valid server receipt advance automatically without a continue button", async () => {
   const calls = [];
   const ui = gate(async (path, options) => {
     calls.push(path);
@@ -37,42 +37,38 @@ test("dialog requires both checked consent and a server-verified puzzle", async 
   const done = ui.instance.open();
   assert.match(ui.content(), /Saya setuju memproses capture pada server lokal ini/);
   ui.node("#verification-consent").checked = true; ui.instance.acknowledge(); await tick();
-  assert.equal(ui.node("#entry-continue").disabled, true);
-  ui.instance.update();
-  assert.equal(ui.node("#entry-continue").disabled, true);
+  assert.doesNotMatch(ui.content(), /entry-continue|Lanjut ke verifikasi/);
+  assert.match(ui.content(), /verifikasi dimulai otomatis/);
   ui.node("#entry-puzzle-slider").value = "135"; ui.instance.movePiece();
   assert.equal(ui.node("#entry-puzzle-piece").style.left, "42.1875%");
   await ui.instance.solve();
-  ui.instance.pending.consent = false; ui.instance.update();
-  ui.instance.continue();
-  assert.ok(ui.instance.pending);
-  ui.instance.pending.consent = true; ui.instance.update();
-  assert.equal(ui.node("#entry-continue").disabled, false);
-  ui.instance.continue();
   assert.deepEqual(await done, { consent: true, captcha_token: "server-receipt" });
   assert.deepEqual(calls, ["/verification-entry/challenge", "/verification-entry/solve"]);
   assert.equal(ui.dialog.open, false);
 });
 
-test("incorrect puzzle cannot continue; refreshing clears a solved receipt", async () => {
-  let wrong = true;
+test("wrong position resets slider and piece, replaces puzzle, and retains consent", async () => {
+  let wrong = true, generation = 0;
   const ui = gate(async (path) => {
-    if (path.endsWith("challenge")) return puzzle;
+    if (path.endsWith("challenge")) return {...puzzle, challenge_id: `puzzle-${++generation}`, background: `new-image-${generation}`};
     if (wrong) { const error = new Error("Wrong piece"); error.status = 422; throw error; }
     return { captcha_token: "server-receipt", expires_in: 120 };
   });
   const done = ui.instance.open();
   ui.node("#verification-consent").checked = true; ui.instance.acknowledge(); await tick();
-  ui.node("#verification-consent").checked = true;
+  ui.node("#entry-puzzle-slider").value = "135";
+  ui.instance.movePiece();
   await ui.instance.solve();
-  assert.equal(ui.node("#entry-continue").disabled, true);
-  assert.equal(ui.node("#entry-error").textContent, "Wrong piece");
-  wrong = false; await ui.instance.solve();
-  assert.equal(ui.node("#entry-continue").disabled, false);
-  await ui.instance.loadPuzzle();
-  assert.equal(ui.node("#entry-continue").disabled, true);
+  assert.equal(ui.instance.pending.challenge.challenge_id, "puzzle-2");
+  assert.match(ui.node("#entry-puzzle").innerHTML, /new-image-2/);
+  assert.equal(ui.node("#entry-puzzle-slider").value, "0");
+  assert.equal(ui.node("#entry-puzzle-piece").style.left, "0%");
+  assert.equal(ui.node("#entry-puzzle-slider").disabled, false);
+  assert.equal(ui.instance.pending.receipt, null);
   assert.equal(ui.instance.pending.consent, true);
-  ui.instance.cancel(); assert.equal(await done, null);
+  assert.match(ui.node("#entry-error").textContent, /Slider direset/);
+  wrong = false; await ui.instance.solve();
+  assert.deepEqual(await done, { consent: true, captcha_token: "server-receipt" });
 });
 
 test("cancel and escape discard pending CAPTCHA responses", async () => {
@@ -86,15 +82,14 @@ test("cancel and escape discard pending CAPTCHA responses", async () => {
   assert.equal(ui.dialog.open, false);
 });
 
-test("receipt expiry disables continuation without discarding consent", async () => {
-  const ui = gate(async (path) => path.endsWith("challenge") ? puzzle : { captcha_token: "short-lived", expires_in: .01 });
+test("an invalid or expired receipt cannot advance into capture", async () => {
+  const ui = gate(async (path) => path.endsWith("challenge") ? puzzle : { captcha_token: "short-lived", expires_in: 0 });
   const done = ui.instance.open();
   ui.node("#verification-consent").checked = true; ui.instance.acknowledge(); await tick();
-  ui.node("#verification-consent").checked = true;
   await ui.instance.solve();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(ui.node("#entry-continue").disabled, true);
+  assert.equal(ui.instance.pending.receipt, null);
   assert.equal(ui.instance.pending.consent, true);
+  assert.match(ui.node("#entry-error").textContent, /Respons CAPTCHA belum sah/);
   ui.instance.cancel(); await done;
 });
 
@@ -170,7 +165,7 @@ test("pointer drag waits until release and checks the final offset only once", a
   assert.deepEqual(answers, [135]);
   ui.instance.onInput({ target: slider }); await tick();
   assert.deepEqual(answers, [135]);
-  ui.instance.continue(); assert.equal((await done).captcha_token, "auto-receipt");
+  assert.equal((await done).captcha_token, "auto-receipt");
 });
 
 test("keyboard idle is debounced and cancellation removes queued checks", async () => {
@@ -186,11 +181,58 @@ test("keyboard idle is debounced and cancellation removes queued checks", async 
   for (const value of [100, 101, 102]) { slider.value = String(value); ui.instance.onInput({ target: slider }); }
   await new Promise((resolve) => setTimeout(resolve, 550));
   assert.deepEqual(answers, [102]);
-  ui.instance.onInput({ target: slider });
-  await new Promise((resolve) => setTimeout(resolve, 550));
+  assert.equal(slider.value, "0");
+  assert.equal(ui.instance.pending.lastCheckedOffset, null);
   assert.deepEqual(answers, [102]);
   slider.value = "103"; ui.instance.onInput({ target: slider });
   ui.instance.cancel(); await done;
   await new Promise((resolve) => setTimeout(resolve, 550));
   assert.deepEqual(answers, [102]);
+});
+
+test("expired puzzle automatically loads a new challenge without losing consent", async () => {
+  let generation=0;
+  const ui=gate(async path => {
+    if(path.endsWith('challenge')) return {...puzzle,challenge_id:'fresh-'+(++generation)};
+    const error=new Error('Expired');error.status=409;throw error;
+  });
+  const done=ui.instance.open();ui.node('#verification-consent').checked=true;ui.instance.acknowledge();await tick();
+  await ui.instance.solve();
+  assert.equal(ui.instance.pending.challenge.challenge_id,'fresh-2');
+  assert.equal(ui.instance.pending.consent,true);assert.match(ui.node('#entry-error').textContent,/tidak berlaku/);
+  ui.instance.cancel();assert.equal(await done,null);
+});
+
+test("cancel while solving ignores a late successful receipt", async () => {
+  let reply;
+  const ui=gate(path=>path.endsWith('challenge')?Promise.resolve(puzzle):new Promise(resolve=>{reply=resolve;}));
+  const done=ui.instance.open();ui.node('#verification-consent').checked=true;ui.instance.acknowledge();await tick();
+  const solving=ui.instance.solve();ui.instance.cancel();assert.equal(await done,null);
+  reply({captcha_token:'late-token',expires_in:120});await solving;
+  assert.equal(ui.instance.pending,null);assert.equal(ui.dialog.open,false);
+});
+
+test("server failure stays actionable without renewing puzzles in a loop", async () => {
+  const calls=[];
+  const ui=gate(async path=>{calls.push(path);if(path.endsWith('challenge'))return puzzle;const error=new Error('Server unavailable');error.status=503;throw error;});
+  const done=ui.instance.open();ui.node('#verification-consent').checked=true;ui.instance.acknowledge();await tick();
+  await ui.instance.solve();
+  assert.equal(calls.length,2);assert.equal(ui.instance.pending.challenge.challenge_id,puzzle.challenge_id);
+  assert.equal(ui.instance.pending.receipt,null);assert.equal(ui.instance.pending.solving,false);
+  assert.match(ui.node('#entry-error').textContent,/Server unavailable/);
+  ui.instance.cancel();await done;
+});
+
+test("automatic receipt completion creates exactly one server session through newFlow", async () => {
+  const ui=gate(async path=>path.endsWith('challenge')?puzzle:{captcha_token:'auto-receipt',expires_in:120});
+  const calls=[];
+  const context=vm.createContext({busy:false,captureResetting:false,principal:{role:'applicant'},authEpoch:0,
+    flow:null,selectedApplication:null,stopCamera(){},$:()=>({close(){}}),releasePreviews(){},stopDeliveryWatch(){},rememberApplication(){},clearRegistrationState(){},
+    verificationEntry:ui.instance,api:async(path,options)=>{calls.push([path,JSON.parse(options.body)]);return{id:'SESSION-AUTO',application_id:'APP-AUTO'};},
+  });
+  vm.runInContext(source.slice(source.indexOf('async function newFlow('),source.indexOf('function table(')),context);
+  const start=context.newFlow(false);ui.node('#verification-consent').checked=true;ui.instance.acknowledge();await tick();
+  await Promise.all([ui.instance.solve(),ui.instance.solve()]);assert.equal(await start,true);
+  ui.instance.continue();assert.equal(calls.length,1);assert.equal(calls[0][1].captcha_token,'auto-receipt');
+  assert.equal(context.flow.session.id,'SESSION-AUTO');assert.equal(ui.dialog.open,false);
 });

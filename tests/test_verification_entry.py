@@ -61,7 +61,7 @@ def test_puzzle_wrong_answer_expiry_refresh_and_single_use():
     for attempt in range(3):
         with pytest.raises(HTTPException) as error:
             service.solve('owner', old['challenge_id'], 0)
-        assert error.value.status_code == (409 if attempt == 2 else 422)
+        assert error.value.status_code == (422 if attempt == 0 else 409)
     assert old['challenge_id'] not in service.challenges
     fresh = service.issue('owner')
     service.challenges[fresh['challenge_id']].expires = 0
@@ -118,3 +118,22 @@ def test_public_resume_requires_fresh_preflight_but_stage_retake_does_not(client
     assert retake.status_code == 200, retake.text
     fresh = verification_entry_body(client, headers)
     assert client.post('/api/sessions', json={**fresh, 'application_id': app_id}, headers=headers).status_code == 200
+
+
+def test_wrong_position_invalidates_only_that_owners_puzzle_then_fresh_receipt_works():
+    service = VerificationEntryService()
+    old = service.issue('owner')
+    other = service.issue('other')
+    target = service.challenges[old['challenge_id']].target_x
+    with pytest.raises(HTTPException) as error:
+        service.solve('owner', old['challenge_id'], 0)
+    assert error.value.status_code == 422
+    assert old['challenge_id'] not in service.challenges
+    assert other['challenge_id'] in service.challenges
+    with pytest.raises(HTTPException):
+        service.solve('owner', old['challenge_id'], target)
+    fresh = service.issue('owner')
+    assert fresh['challenge_id'] != old['challenge_id']
+    assert fresh['background'] != old['background']
+    token = service.solve('owner', fresh['challenge_id'], service.challenges[fresh['challenge_id']].target_x)['captcha_token']
+    service.consume('owner', token)

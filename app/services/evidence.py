@@ -84,7 +84,7 @@ class EvidenceStore:
             {k: metadata[k] for k in fields}, sort_keys=True, separators=(",", ":")
         )
 
-    def save(self, con, application, kind, content, retention_days, policy):
+    def save(self, con, application, kind, content, retention_days, policy, expires=None):
         meta = {
             "id": "EVD-" + uuid.uuid4().hex,
             "application_id": application["id"],
@@ -93,7 +93,7 @@ class EvidenceStore:
             "policy_version": policy,
             "kind": kind,
             "created": utcnow(),
-            "expires": time.time() + retention_days * 86400,
+            "expires": expires if expires is not None else time.time() + retention_days * 86400,
             "binding_version": 2,
         }
         sealed = self.box.seal(content, self.binding(meta))
@@ -129,11 +129,11 @@ class EvidenceStore:
             policy,
         )
 
-    def image(self, con, application, kind, image, days, policy):
+    def image(self, con, application, kind, image, days, policy, expires=None):
         encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 90])[
             1
         ].tobytes()
-        meta = self.save(con, application, kind, encoded, days, policy)
+        meta = self.save(con, application, kind, encoded, days, policy, expires=expires)
         meta["stored_content_sha256"] = hashlib.sha256(encoded).hexdigest()
         meta["transform"] = "Decoded server image, EXIF removed, JPEG quality 90"
         return meta
@@ -145,6 +145,8 @@ class EvidenceStore:
         if not row:
             raise HTTPException(404, "Bukti tidak ditemukan.")
         meta = dict(row)
+        if not row["ciphertext"] and row["expires"] > time.time():
+            raise HTTPException(410, "Foto bukti telah dihapus oleh administrator.")
         if not row["ciphertext"] or row["expires"] <= time.time():
             raise HTTPException(
                 410, "Retensi bukti telah berakhir. Capture baru diperlukan."

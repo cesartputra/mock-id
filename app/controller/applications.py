@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, model_validator
 from app.services.auth import actor, roles
 from app.services.workflow import JAKARTA
 from app.services.slik_pdf import SlikPdfService
+from app.services.imaging import CaptureError
+from app.services.pipeline import ModelUnavailable
 
 router = APIRouter(prefix="/api")
 
@@ -18,6 +20,13 @@ class Attestation(BaseModel):
 
 class DemoRecheck(BaseModel):
     capture_revision: int = Field(ge=0, strict=True)
+
+
+class CleanupRequest(BaseModel):
+    mode: str = Field(pattern="^(photos|full)$")
+    capture_revision: int = Field(ge=0, strict=True)
+    expected_updated_at: str = Field(min_length=10, max_length=80)
+    confirm_application_id: str = Field(min_length=5, max_length=80)
 
 
 class Booking(BaseModel):
@@ -91,6 +100,34 @@ def listing(request: Request):
 @router.get("/applications/{application_id}")
 def status(application_id: str, request: Request):
     return request.app.state.workflow.snapshot(application_id, actor(request))
+
+
+@router.get("/operator/applications/{application_id}/cleanup")
+def cleanup_plan(application_id: str, request: Request):
+    return request.app.state.operator_data.plan(application_id, roles(request, "admin"))
+
+
+@router.post("/operator/applications/{application_id}/cleanup")
+def cleanup(application_id: str, body: CleanupRequest, request: Request):
+    return request.app.state.operator_data.clean(application_id, roles(request, "admin"), body.mode,
+                                                body.capture_revision, body.expected_updated_at, body.confirm_application_id)
+
+
+@router.post("/applications/{application_id}/document-crop")
+async def stored_document_crop(application_id: str, request: Request):
+    who = roles(request, "admin", "helpdesk")
+    service = request.app.state.operator_data
+    existing, source = service.crop_source(application_id, who)
+    if existing:
+        return existing
+    revision, metadata, image, nik = source
+    try:
+        reading = await request.app.state.inference_queue.run(request.app.state.verifier.document, image)
+    except CaptureError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ModelUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return service.save_crop(application_id, who, revision, metadata, image, reading, nik)
 
 
 @router.post("/applications/{application_id}/demo/recheck")

@@ -12,6 +12,7 @@ from app.services.score_policy import ScorePolicy
 from app.services.assessment import OPTIONAL_CONTROLS
 from app.services.authority import AuthorityService
 from app.services.document_progress import document_progress
+from app.services.document import document_crop
 
 JAKARTA = ZoneInfo("Asia/Jakarta")
 DEFAULT_FLOW = {
@@ -197,6 +198,8 @@ class WorkflowService:
                 history=p.get("history", []),
                 review=p.get("review"),
                 identity_assessment=p.get("identity_assessment"),
+                photo_cleanup=p.get("photo_cleanup"),
+                document_crop_status=p.get("document_crop_status"),
             )
         return value
 
@@ -247,6 +250,17 @@ class WorkflowService:
             application_id,
         )
         return self.public(app)
+
+    def link_session(self, session):
+        """Keep cleanup ownership discoverable after a camera session expires."""
+        with self.repository.connect(write=True) as con:
+            app = self.get(con, session.application_id)
+            if app["owner_id"] != session.owner_id or app["revision"] != session.revision:
+                raise HTTPException(409, "Sesi tidak sesuai versi/pemilik permohonan.")
+            ids = app["payload"].setdefault("session_ids", [])
+            if session.id not in ids:
+                ids.append(session.id)
+                self.save(con, app)
 
     def invalidate(self, application_id, actor, revision, new_capture=False):
         with self.repository.connect(write=True) as con:
@@ -311,6 +325,8 @@ class WorkflowService:
                 raise HTTPException(
                     409, "Bukti sudah berubah atau permohonan telah diputuskan."
                 )
+            if session.id not in app["payload"].setdefault("session_ids", []):
+                app["payload"]["session_ids"].append(session.id)
             fields = dict(session.document_result["fields"])
             subject = self.box.subject(fields["nik"])
             app["subject_id"] = subject
@@ -405,6 +421,7 @@ class WorkflowService:
             )
             days = self.settings(con)["retention_days"]
             policy = routing["policy_version"]
+            app["payload"].pop("photo_cleanup", None)
             evidence = [
                 self.evidence.json(con, app, "identity", fields, days, policy),
                 self.evidence.json(
@@ -436,6 +453,16 @@ class WorkflowService:
                     "holding": session.holding_digest,
                 }[kind]
                 evidence.append(meta)
+                if kind == "document":
+                    selected = document_crop(image, session.document_result)
+                    if selected is not None:
+                        crop, info = selected
+                        derived = self.evidence.image(con, app, "document-crop", crop, days, policy, expires=meta["expires"])
+                        derived.update(derived_from=meta["id"], crop=info)
+                        evidence.append(derived)
+                        app["payload"]["document_crop_status"] = "available"
+                    else:
+                        app["payload"]["document_crop_status"] = "not_located"
             for i, image in enumerate(frames[:3]):
                 evidence.append(
                     self.evidence.image(

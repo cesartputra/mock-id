@@ -14,4 +14,5 @@ run(process.execPath, [
   "tests/test_auto_capture.cjs",
   "tests/test_api_response.cjs",
   "tests/test_result_presentation.cjs",
+  "tests/test_operator_ui.cjs",
 ]);

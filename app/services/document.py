@@ -1,9 +1,24 @@
 """Native-resolution document crops and quality measured on observed text."""
 
 import cv2
+import numpy as np
 from app.services.glare import require_no_glare, GLARE_MESSAGE
 from app.services.imaging import CaptureError, card_region, quality
 from app.services.ocr import REQUIRED_FIELDS, FIELD_THRESHOLD, valid_field
+
+
+def document_crop(image, reading):
+    """Recover the selected native perspective crop; never label a full scene as a card."""
+    box = reading.get("card_box")
+    method = reading.get("crop_method")
+    if method == "card_geometry" and box:
+        try:
+            for _, crop, candidate in card_region(image):
+                if np.allclose(candidate, box, atol=1):
+                    return crop.copy(), {"method": method, "source_box": list(candidate)}
+        except CaptureError:
+            pass
+    return None
 
 
 def read_document(image, ocr):

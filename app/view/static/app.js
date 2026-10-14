@@ -254,6 +254,8 @@ const date = (v) =>
 const pct = (v) =>
   typeof v === "number" ? (v * 100).toFixed(1) + "%" : "Belum diperiksa";
 function head(title, sub, action = "", eyebrow = "LOCAL IDENTITY INFERENCE") {
+  if (typeof operatorPages !== "undefined" && operatorPages.has(page))
+    return `${registrationHeader(({dashboard: 1, queue: 2, audit: 3, modules: 4})[page], title, sub)}${action ? `<div class="operator-heading-actions">${action}</div>` : ""}`;
   return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${sub}</p></div>${action}</div>`;
 }
 function updateNav() {
@@ -270,7 +272,8 @@ function updateNav() {
   if ($("#crumb")) $("#crumb").textContent = names[page];
 }
 function render() {
-  document.body.classList.toggle("public-mode", publicPages.has(page));
+  document.body.classList.toggle("public-mode", publicPages.has(page) || ["dashboard", "queue", "audit", "modules"].includes(page));
+  if (typeof updateOperatorNav === "function") updateOperatorNav();
   updateNav();
   const views = {
     account: accountView,
@@ -280,7 +283,7 @@ function render() {
     postkyc: postKycView,
     receipt: receiptView,
     status: publicStatus,
-    dashboard,
+    dashboard: operatorDashboardView,
     verify: verifyView,
     queue: operatorQueueView,
     audit: auditView,
@@ -294,7 +297,7 @@ function render() {
   }
   const view = views[page]();
   $("#app").innerHTML =
-    `<div class="screen-enter">${page === "dashboard" ? adminMetricsView() : ""}${view}</div>`;
+    `<div class="screen-enter">${view}</div>`;
 }
 async function navigate(target) {
   const navigation = ++navigationRevision;
@@ -344,7 +347,8 @@ async function navigate(target) {
     if (page === "result" || page === "status") await observeDelivery(selectedApplication);
     else if (page !== "verify") stopDeliveryWatch();
   } catch (e) {
-    document.body.classList.toggle("public-mode", publicPages.has(page));
+    document.body.classList.toggle("public-mode", publicPages.has(page) || ["dashboard", "queue", "audit", "modules"].includes(page));
+    if (typeof updateOperatorNav === "function") updateOperatorNav();
     updateNav();
     $("#app").innerHTML =
       `${head(e.status >= 500 ? "Server mengalami gangguan" : "Backend belum terhubung", e.status >= 500 ? "Server belum dapat menyelesaikan permintaan. Coba kembali dan periksa log server." : "Pastikan server Python sudah berjalan melalui npm start.")}<div class="callout" role="alert">${esc(e.message)}</div>`;

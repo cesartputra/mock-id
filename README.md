@@ -1,5 +1,21 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.5.0 Workspace operator, clean data dan crop KTP
+
+Workspace operator mengikuti tampilan halaman pemohon: header iDebKu demo, halaman putih, judul bernomor dengan garis merah, dan **menu operator di navbar atas**. Administrator memperoleh Ringkasan, Data pemohon, Jejak aktivitas, serta Modul & konfigurasi; helpdesk tetap hanya memperoleh kasus yang berwenang diaksesnya. Tabel Data pemohon mencakup permohonan yang sudah selesai maupun yang membutuhkan review, dengan pencarian dan filter status. Navbar dan tabel dapat digeser mendatar pada ponsel.
+
+Pada **Data pemohon → Clean data**, administrator memilih **Hapus foto saja** atau **Hapus seluruh data permohonan**. Cakupan selalu **satu permohonan yang dipilih**, termasuk seluruh versi buktinya; permohonan lain dengan NIK yang sama dan akun login tetap disimpan. Foto saja menghapus KTP asli, crop, selfie, foto memegang KTP dan frame gerakan, sambil mempertahankan identitas, skor, hasil dan PDF. Penghapusan penuh juga menghapus identitas/bukti JSON, hasil pemeriksaan, pendaftaran, laporan/PDF tersimpan, kasus/jadwal dan cache respons terkait. Dialog menunjukkan nama/nomor/jumlah data dan membutuhkan konfirmasi. Data yang berubah atau sedang diproses ditahan; sesi kamera terkait dibersihkan agar capture lama tidak memulihkan foto. Jejak administratif minimal tanpa identitas pemohon tetap mencatat penghapusan penuh.
+
+Detail bukti menampilkan **Foto KTP asli** dan **Crop KTP · hanya area kartu** secara terpisah, dengan tombol perbesar. Capture baru menyimpan crop perspektif dari area yang dipilih OCR, terenkripsi dengan versi dan retensi yang sama. Bukti lama dapat memakai **Buat crop KTP dari foto tersimpan** untuk menjalankan OCR lokal dan mencocokkan NIK dengan identitas server. Crop tidak dibuat jika bingkai kartu belum dapat dipisahkan, foto sudah dihapus/kedaluwarsa, atau versi bukti berubah. Foto asli tetap tersedia ketika crop belum dapat dibuat. Tidak ada bobot/dependency tambahan.
+
+```bash
+git switch feat/verification-consent-captcha
+git pull --ff-only
+npm start
+```
+
+Hentikan server lama sebelum menjalankan kembali, lalu reload `http://127.0.0.1:4173` dan masuk melalui **Akses petugas** dengan akun administrator Anda. Penghapusan server tidak menghapus file yang sudah diunduh, cache perangkat atau salinan backup terpisah. Lihat [cakupan dan API pengelolaan data](docs/OPERATOR-DATA.md).
+
 ## Pembaruan 3.4.1 Routing PAD demo dan garis verifikasi
 
 Pada **demo tanpa kalibrasi**, skor gabungan **≥50/100** dapat menyetujui otomatis ketika yang belum terpenuhi hanya nilai numerik **PAD rekaman / PAD foto memegang KTP** beserta kontrol gabungannya. PAD tetap dijalankan dan tetap berkontribusi pada skor; nilai rendah dan status kontrol aslinya tidak diubah menjadi lulus. Kemiripan kedua pasangan wajah, kontinuitas wajah, gerakan, keterbacaan/kesesuaian NIK, deteksi KTP, tangan, wajah tanpa penutup, kualitas capture, bukti sesi dan kewenangan pemohon tetap wajib. PAD hilang/tidak tersedia, measurement tidak sah, gangguan teknis, atau penolakan keamanan tetap menahan persetujuan. Produksi dan profil terkalibrasi tetap memerlukan seluruh kontrol terpenuhi. Ini pengecualian routing untuk PDF sintetis, bukan peningkatan akurasi atau kalibrasi model.

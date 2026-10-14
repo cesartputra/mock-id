@@ -1,5 +1,13 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Validasi terbaru 3.5.0 — 14 Oktober 2026
+
+Suite penuh lulus **333 tes Python dan 84 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Syntax/compile check juga lulus. Delapan belas tes Python baru mencakup penghapusan foto yang mempertahankan identitas/hasil/PDF, seluruh revisi serta sesi RAM, penghapusan penuh dan isolasi permohonan lain dengan owner/NIK sama, reservasi/hasil/registrasi/cache terkait, otorisasi admin, konfirmasi/versi stale, native work/PDF aktif, storage tidak tersedia, crop perspektif native terenkripsi dan retensi/binding, idempotensi crop lama, penolakan pemulihan foto yang dihapus saat OCR berjalan, serta hasil gagal yang tetap dapat ditelusuri lewat pengikat sesi setelah sesi/bukti kedaluwarsa. Setelah penguatan fixture hasil orphan, seluruh 18 tes operator dijalankan kembali dan lulus.
+
+Sembilan tes JavaScript baru mencakup navbar/peran, daftar permohonan selesai, escaping teks, foto asli/crop/perbesar, placeholder foto terhapus tanpa request gambar, dialog default foto saja dengan konfirmasi satu APP, payload versi server, refresh hasil tanpa mengunduh PDF operator, respons cleanup stale dan respons crop yang tidak mengganti permohonan lain. Regresi otorisasi publik/operator yang sudah ada tetap lulus.
+
+QA browser memakai server dan database `.cache/operator350-data` terpisah: kartu sintetis bertanda **KARTU UJI — BUKAN KTP**, potret astronaut publik, dan hasil biometrik fixture berlabel. OCR native benar-benar dijalankan untuk memilih crop kartu. UI menunjukkan foto latar utuh di sebelah crop tanpa latar, perbesar crop, dialog jumlah data dan dua pilihan penghapusan. Dialog diperiksa lalu dibatalkan; perilaku penghapusan dijalankan pada database disposable melalui tes API, bukan data pemohon nyata. Navbar berada di header. Viewport 390×844 tidak overflow halaman; navbar/tabel scroll dan galeri satu kolom. Ukuran browser dipulihkan setelah QA. Screenshot berada di outputs/app-350-operator-dashboard.jpg, app-350-ktp-crop.jpg, app-350-clean-data.jpg dan app-350-operator-mobile.jpg pada workspace chat. Tidak ada KTP/kamera pribadi atau pengajuan ke OJK pada pengujian ini.
+
 ## Validasi terbaru 3.4.1 — 14 Oktober 2026
 
 Suite penuh lulus **315 tes Python dan 75 tes JavaScript**, dengan **2 skip lingkungan** (CUDA native / server PostgreSQL) dan satu peringatan deprecation Starlette/httpx. Pemeriksaan sintaks Python/JavaScript dan whitespace diff lulus. Tidak ada model atau dependency baru.

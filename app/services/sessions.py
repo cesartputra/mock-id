@@ -86,6 +86,8 @@ class SessionService:
         s.challenges = secrets.SystemRandom().sample(['blink', 'turn', 'smile'], 3)
 
     def check_revision(self, s, request):
+        if getattr(s, "data_cleaned", False):
+            raise HTTPException(410, 'Data sesi telah dibersihkan administrator. Buat capture baru.')
         revision = request.headers.get('X-Capture-Revision')
         # Legacy batch clients without this header remain supported. Updated
         # clients bind every asynchronous request to a capture generation.

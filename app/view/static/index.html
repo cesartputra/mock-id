@@ -18,6 +18,7 @@
     <script src="/static/quality-gate.js" defer></script>
     <script src="/static/report-delivery.js" defer></script>
     <script src="/static/workflow-ui.js" defer></script>
+    <script src="/static/operator.js" defer></script>
     <script src="/static/verification-entry.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
@@ -40,6 +41,12 @@
           Workspace operator ↗
         </button>
       </nav>
+      <nav class="operator-header-actions" aria-label="Akun operator">
+        <span id="operator-account-label">Workspace operator</span>
+        <button data-page="home">Halaman pemohon ↗</button>
+        <button data-logout>Keluar</button>
+      </nav>
+      <nav id="operator-nav" class="operator-navigation" aria-label="Workspace operator" hidden></nav>
     </header>
     <aside class="sidebar">
       <a class="brand" href="#dashboard" aria-label="iDeb Verify beranda"

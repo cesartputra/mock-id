@@ -23,6 +23,7 @@ from app.services.manual import ManualService
 from app.services.slik import SlikService
 from app.services.inference_queue import InferenceQueue
 from app.services.verification_entry import VerificationEntryService
+from app.services.operator_data import OperatorDataService
 from app.controller.verification_entry import router as verification_entry_router
 from app.controller.auth import router as auth_router
 from app.controller.applications import router as applications_router
@@ -60,6 +61,7 @@ async def lifespan(app):
         else None
     )
     app.state.sessions = SessionService(registry)
+    app.state.operator_data = OperatorDataService(app.state.workflow, app.state.sessions)
     app.state.verifier = VerificationService(app.state.repository)
 
     async def expire_sessions():
@@ -85,7 +87,7 @@ async def lifespan(app):
 def create_app(data_directory=DATA):
     app = FastAPI(
         title="mock-id local identity verification",
-        version="3.4.1",
+        version="3.5.0",
         lifespan=lifespan,
         telemetry={
             "tracing": False,

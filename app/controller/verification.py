@@ -242,6 +242,7 @@ def create_session(request: Request, body: CaptureStart | None = None):
         request.app.state.workflow.attest(app['id'], who, True)
         repository.audit('Persetujuan capture dan CAPTCHA', CONSENT_VERSION, app['id'])
     session = sessions.create(who['id'], app['id'], app['revision'])
+    request.app.state.workflow.link_session(session)
     repository.audit('Sesi dibuat', 'Capture OCR, liveness, dan KYC lokal.', session.id)
     return session.public()
 

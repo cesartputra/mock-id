@@ -1,5 +1,22 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.4.1 Routing PAD demo dan garis verifikasi
+
+Pada **demo tanpa kalibrasi**, skor gabungan **≥50/100** dapat menyetujui otomatis ketika yang belum terpenuhi hanya nilai numerik **PAD rekaman / PAD foto memegang KTP** beserta kontrol gabungannya. PAD tetap dijalankan dan tetap berkontribusi pada skor; nilai rendah dan status kontrol aslinya tidak diubah menjadi lulus. Kemiripan kedua pasangan wajah, kontinuitas wajah, gerakan, keterbacaan/kesesuaian NIK, deteksi KTP, tangan, wajah tanpa penutup, kualitas capture, bukti sesi dan kewenangan pemohon tetap wajib. PAD hilang/tidak tersedia, measurement tidak sah, gangguan teknis, atau penolakan keamanan tetap menahan persetujuan. Produksi dan profil terkalibrasi tetap memerlukan seluruh kontrol terpenuhi. Ini pengecualian routing untuk PDF sintetis, bukan peningkatan akurasi atau kalibrasi model.
+
+Contoh berskor **76,98** yang hanya tertahan PAD kini bisa menjadi `SLIK_READY` dengan skor dan rincian kontribusi yang sama. Classifier AI tetap diagnostik opsional. Untuk permohonan lama yang masih menunggu/terjadwal manual, tombol **Terapkan aturan demo ≥50 pada bukti ini** memeriksa ulang bukti terenkripsi milik pemohon pada versi yang sama. Server memverifikasi binding/retensi dan menghitung keputusan dari bukti tersimpan, bukan angka browser. Jika memenuhi aturan, slot manual dilepas dan PDF diunduh otomatis. Kasus yang sedang diperiksa petugas tidak diubah. Identitas PDF tetap berasal dari KTP server; hanya data keuangannya acak sintetis.
+
+Garis merah pada judul halaman verifikasi dipertahankan; tepi atas panel di bawahnya kini abu-abu sehingga tidak ada garis merah ganda.
+
+```bash
+git fetch origin
+git switch feat/verification-consent-captcha
+git pull --ff-only
+npm start
+```
+
+Hentikan server lama sebelum `npm start`, lalu reload `http://127.0.0.1:4173`. Untuk kasus lama, buka **Status layanan**, cari nomor permohonan pada browser pemilik, dan gunakan tombol penilaian ulang bila tersedia. Tidak perlu bobot/dependency baru atau capture ulang jika bukti tersimpan masih sah. Pengambilan baru langsung memakai aturan terbaru.
+
 ## Pembaruan 3.4.0 Layout proses dan status dokumen
 
 Branch `feat/verification-consent-captcha` memakai layout proses yang mengikuti referensi iDebKu: penanda langkah bernomor, garis merah, formulir dua kolom, ringkasan dokumen KTP/liveness/foto memegang KTP, dan dialog pendaftaran berhasil dengan kode yang dapat disalin. Formulir registrasi mengambil nama, NIK, tanggal lahir, dan alamat awal melalui endpoint identitas milik pemohon; keputusan harus masih berlaku dan terikat versi bukti terbaru. Formulir tambahan tetap opsional untuk demo integrasi; PDF setelah KYC disetujui tetap diunduh otomatis.

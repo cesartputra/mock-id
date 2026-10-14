@@ -90,6 +90,7 @@ test("persistent applicant result displays demo Dukcapil pass with manual decisi
     page: "result",
     routingExplanation: () => "",
   });
+  vm.runInContext(workflow.slice(workflow.indexOf("function routingRequirements("), workflow.indexOf("function routingExplanation(")), panelContext);
   vm.runInContext(
     workflow.slice(
       workflow.indexOf("function applicationPanel("),
@@ -264,4 +265,18 @@ test("four-component score explains AI exclusion and normalized weights", () => 
     html,
     /tidak mendapat poin bukti dan memerlukan tinjauan|<td>Bukti classifier AI/,
   );
+});
+
+test("demo PAD approval explains the exception and preserves the 76.98 score", () => {
+  const workflow = fs.readFileSync("app/view/static/workflow-ui.js", "utf8");
+  const panel = vm.createContext({esc:String,approvedStates:['SLIK_READY'],stateLabels:{SLIK_READY:'PDF siap'},flow:null,page:'result',principal:null});
+  vm.runInContext(workflow.slice(workflow.indexOf('function routingRequirements('),workflow.indexOf('function deliveryView(')),panel);
+  const html = panel.applicationPanel({id:'APP-PAD-DEMO',state:'SLIK_READY',routing:{routing_score:76.98388,automatic_threshold:50,calibrated:false,demo_model_override:true,demo_pad_score_routing:true}});
+  assert.match(html,/76\.98/);
+  assert.match(html,/PAD dinilai melalui skor gabungan/);
+  assert.match(html,/Nilai asli tetap tercatat/);
+  assert.doesNotMatch(html,/dan seluruh kontrol wajib terpenuhi/);
+  const old = panel.applicationPanel({id:'APP-OLD',capture_revision:3,state:'MANUAL_PENDING',demo_policy_recheck_available:true});
+  assert.match(old,/data-demo-recheck="APP-OLD" data-revision="3"/);
+  assert.match(old,/Terapkan aturan demo ≥50 pada bukti ini/);
 });

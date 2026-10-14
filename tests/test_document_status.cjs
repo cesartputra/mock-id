@@ -19,6 +19,7 @@ function context(overrides = {}) {
     ...overrides,
   });
   vm.runInContext(source, ctx);
+  vm.runInContext(workflow.slice(workflow.indexOf('function routingRequirements('), workflow.indexOf('function routingExplanation(')), ctx);
   return { ctx, listeners };
 }
 function read(ctx, expression) { return vm.runInContext(expression, ctx); }
@@ -149,4 +150,37 @@ test('an expired lookup failure cannot replace the next request or navigate back
   fail(new Error('Old request failed'));
   assert.equal(await pending,false);
   assert.equal(read(ctx,'serviceStatus'),null);
+});
+
+test('recheck submits only the current revision, prevents duplicate clicks and observes ready PDF', async () => {
+  const requests=[],observed=[];let answer, click;
+  const old={id:'APP-TEST',state:'MANUAL_SCHEDULED'};
+  const ctx=vm.createContext({document:{addEventListener:(name,handler)=>{if(name==='click')click=handler;}},
+    authEpoch:0,navigationRevision:0,selectedApplication:old,serviceStatus:{application:old},flow:{result:{application:old}},
+    stopDeliveryWatch:()=>{},render:()=>{},observeDelivery:async app=>observed.push(app.state),
+    api:(path,options)=>{requests.push([path,JSON.parse(options.body)]);return new Promise(resolve=>answer=resolve);},errorMessage:assert.fail});
+  vm.runInContext(workflow.slice(workflow.indexOf('document.addEventListener("click"'),workflow.indexOf('document.addEventListener("submit"')),ctx);
+  const button={disabled:false,isConnected:true,dataset:{demoRecheck:'APP-TEST',revision:'3'},hasAttribute:()=>false};
+  const event={target:{closest:()=>button}};
+  const pending=click(event);await click(event);
+  assert.equal(requests.length,1);
+  assert.deepEqual(requests,[['/applications/APP-TEST/demo/recheck',{capture_revision:3}]]);
+  answer({id:'APP-TEST',state:'SLIK_READY'});await pending;
+  assert.deepEqual(observed,['SLIK_READY']);
+  assert.equal(ctx.flow.result.application.state,'SLIK_READY');
+  assert.equal(button.disabled,false);
+});
+
+test('late recheck cannot redraw another page or start an old PDF download',async()=>{
+  let answer,click,rendered=0,observed=0;
+  const ctx=vm.createContext({document:{addEventListener:(name,handler)=>{if(name==='click')click=handler;}},
+    authEpoch:0,navigationRevision:0,selectedApplication:{id:'APP-TEST'},serviceStatus:null,flow:null,
+    stopDeliveryWatch:()=>{},render:()=>{rendered++;},observeDelivery:async()=>{observed++;},
+    api:()=>new Promise(resolve=>answer=resolve),errorMessage:assert.fail});
+  vm.runInContext(workflow.slice(workflow.indexOf('document.addEventListener("click"'),workflow.indexOf('document.addEventListener("submit"')),ctx);
+  const button={disabled:false,isConnected:true,dataset:{demoRecheck:'APP-TEST',revision:'3'},hasAttribute:()=>false};
+  const pending=click({target:{closest:()=>button}});
+  ctx.navigationRevision++;
+  answer({id:'APP-TEST',state:'SLIK_READY'});await pending;
+  assert.equal(rendered,0);assert.equal(observed,0);
 });

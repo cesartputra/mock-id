@@ -38,8 +38,8 @@ TRANSITIONS = {
     "CAPTURE_RETRY": {"VERIFYING"},
     "TECHNICAL_PENDING": {"VERIFYING", "SLIK_PENDING"},
     "AUTO_APPROVED": {"SLIK_PENDING", "VERIFYING"},
-    "MANUAL_PENDING": {"MANUAL_SCHEDULED", "VERIFYING"},
-    "MANUAL_SCHEDULED": {"MANUAL_PENDING", "MANUAL_IN_REVIEW", "VERIFYING"},
+    "MANUAL_PENDING": {"MANUAL_SCHEDULED", "VERIFYING", "AUTO_APPROVED"},
+    "MANUAL_SCHEDULED": {"MANUAL_PENDING", "MANUAL_IN_REVIEW", "VERIFYING", "AUTO_APPROVED"},
     "MANUAL_IN_REVIEW": {
         "MANUAL_APPROVED",
         "MANUAL_REJECTED",
@@ -157,6 +157,7 @@ class WorkflowService:
                         "scope",
                         "automatic_threshold",
                         "demo_model_override",
+                        "demo_pad_score_routing", "demo_override_controls",
                         "security_review",
                         "components", "weights", "contributions", "formula",
                         "assessment", "ai_evidence_usable", "ai_validation_required",
@@ -174,6 +175,15 @@ class WorkflowService:
             "manual_admission": p.get("manual_admission"),
             "slik": p.get("slik"),
             "retry": p.get("retry"),
+            "demo_policy_recheck_available": bool(
+                self.policy.demo_pad_score_routing
+                and app["state"] in {"MANUAL_PENDING", "MANUAL_SCHEDULED"}
+                and routing.get("policy_version") != self.policy.calibrator.version
+                and type(routing.get("routing_score")) in [int, float]
+                and routing["routing_score"] >= self.policy.automatic_threshold
+                and p.get("evidence")
+                and all(e["expires"] > time.time() for e in p["evidence"])
+            ),
             "owner_id": app["owner_id"] if operator else None,
             "missing_controls": [
                 k for k, v in routing.get("mandatory", {}).items() if not v
@@ -357,7 +367,7 @@ class WorkflowService:
                 "AUTO_APPROVED": "Kontrol lokal dan kewenangan permohonan demo terpenuhi. Hanya hasil sintetis yang dapat dibuka.",
             }.get(routing["decision"], result["reason"])
             if routing.get("demo_model_override"):
-                routing_reason = "Skor routing demo memenuhi ambang ≥50/100. Ketidakpastian model diterima khusus untuk PDF sintetis; skor dan kontrol asli tetap tercatat."
+                routing_reason = "Skor routing demo memenuhi ambang ≥50/100 dan kontrol identitas, wajah, gerakan serta bukti sesi terpenuhi. Skor PAD dinilai melalui skor gabungan khusus PDF sintetis; nilai asli tetap tercatat."
             if routing["security_review"]:
                 routing_reason = "Pemeriksaan memberi sinyal risiko keamanan. Sinyal model bukan bukti pasti penipuan; permohonan ini memerlukan peninjauan keamanan."
             app["payload"].update(
@@ -466,6 +476,63 @@ class WorkflowService:
             "authority_verified": app["payload"].get("authority_verified", False),
             "scope": "synthetic_only" if self.policy.mode == "demo" else "production",
         }
+
+    def recheck_demo_policy(self, application_id, actor, revision):
+        """Apply the demo policy to existing server-bound evidence, never client scores."""
+        if not self.policy.demo_pad_score_routing:
+            raise HTTPException(409, "Penilaian ulang ini hanya tersedia untuk mode demo tanpa kalibrasi.")
+        with self.repository.connect(write=True) as con:
+            app = self.get(con, application_id)
+            self.authorize(con, app, actor)
+            if revision != app["revision"]:
+                raise HTTPException(409, "Bukti sudah berubah. Muat status terbaru.")
+            p = app["payload"]
+            if (app["state"] in {"AUTO_APPROVED", "SLIK_PENDING", "SLIK_READY"}
+                    and (p.get("routing") or {}).get("policy_version") == self.policy.calibrator.version):
+                return self.public(app)
+            if app["state"] not in {"MANUAL_PENDING", "MANUAL_SCHEDULED"}:
+                raise HTTPException(409, "Permohonan harus menunggu pemeriksaan; kasus yang sedang diperiksa petugas tidak diubah.")
+            evidence = p.get("evidence", [])
+            if not evidence or any(e["expires"] <= time.time() for e in evidence):
+                raise HTTPException(410, "Bukti sudah kedaluwarsa. Pengambilan ulang diperlukan.")
+            # Verify sealed metadata for the current identity/capture set before approving.
+            packed = None
+            for entry in evidence:
+                content, meta = self.evidence.read(con, entry["id"])
+                if (meta["application_id"] != app["id"] or meta["revision"] != app["revision"]
+                        or meta["subject_id"] != app["subject_id"]):
+                    raise HTTPException(409, "Bukti tidak terikat pada versi permohonan ini.")
+                if meta["kind"] == "verification":
+                    if packed is not None:
+                        raise HTTPException(409, "Bukti pemeriksaan tidak tunggal.")
+                    packed = json.loads(content)
+            identity = self.identity(con, app)
+            if not packed or self.box.subject(identity["nik"]) != app["subject_id"]:
+                raise HTTPException(409, "Bukti identitas/pemeriksaan server belum lengkap.")
+            binding = packed.get("session_binding") or {}
+            result = packed.get("result") or {}
+            mandatory = (p.get("routing") or {}).get("mandatory") or {}
+            if (binding.get("capture_revision") != revision or binding.get("proof_bound") is not True
+                    or not binding.get("session_id") or not binding.get("selfie_digest")
+                    or result.get("id") != p.get("verification_id")
+                    or not p.get("authority_attested") or p.get("authority_verified") is not True):
+                raise HTTPException(409, "Pengikat bukti atau kewenangan pemohon belum sah.")
+            routing = self.policy.route(result, mandatory)
+            if routing["decision"] != "AUTO_APPROVED":
+                raise HTTPException(409, "Skor atau kontrol wajib belum memenuhi kebijakan demo terbaru.")
+            previous = (p.get("routing") or {}).get("policy_version")
+            p["routing"] = routing
+            p["reason"] = "Kebijakan demo terbaru diterapkan pada bukti server yang sama. Skor ≥50/100 dan kontrol identitas/capture terpenuhi; PAD dinilai melalui skor gabungan untuk PDF sintetis."
+            p["reservation"] = None
+            p.pop("manual_admission", None)
+            con.execute("UPDATE manual_cases SET state='CANCELLED' WHERE application_id=? AND state='SCHEDULED'", (app["id"],))
+            self.transition(app, "AUTO_APPROVED")
+            self.approval(app, "automatic", None)
+            self.save(con, app)
+            con.execute("INSERT INTO audit(created,type,ref,detail) VALUES (?,?,?,?)",
+                        (utcnow(), "Kebijakan demo diterapkan ulang", app["id"],
+                         f"Actor {actor['id']}; revision {revision}; policy {previous} → {routing['policy_version']}; slot manual dilepas."))
+            return self.public(app)
 
     def snapshot(self, application_id, actor):
         with self.repository.connect() as con:

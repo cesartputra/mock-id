@@ -24,8 +24,11 @@ REQUIRED_CONTROLS = {
     "approved_identity_procedure",
 }
 
-# Latest policy: every required non-AI control is a gate. Numeric strength cannot replace
-# missing, failed or uncertain identity/security evidence.
+# In the uncalibrated demo, measured PAD contributes to the combined score.
+# Identity, face matching, motion, visibility and bound evidence remain gates.
+# Production and calibrated policies still require every control to pass.
+DEMO_PAD_CONTROLS = {"Anti-spoof / PAD", "PAD foto memegang KTP"}
+DEMO_PAD_COMPOSITES = {"document_face_liveness_pad", "approved_identity_procedure"}
 # Preserve relative weights of the four required components after removing AI.
 WEIGHTS = {
     "face": 0.25 / 0.90,
@@ -57,7 +60,7 @@ def mapped(value, points):
 
 class ScoreCalibrator:
     def __init__(self):
-        self.version = "demo-routing-v7-ai-optional"
+        self.version = "demo-routing-v8-pad-score-demo"
         self.calibrated = False
         self.points = DEMO_POINTS
         self.weights = WEIGHTS
@@ -158,6 +161,41 @@ class ScorePolicy:
     def automatic_threshold(self):
         return 50 if self.mode == "demo" and not self.calibrator.calibrated else 95
 
+    @property
+    def demo_pad_score_routing(self):
+        return self.mode == "demo" and not self.calibrator.calibrated
+
+    def pad_score_eligible(self, result, mandatory, assessment):
+        if not self.demo_pad_score_routing or result["status"] not in {"pass", "manual"}:
+            return False
+        if assessment["incomplete"] or not REQUIRED_CONTROLS.issubset(mandatory):
+            return False
+        if any(type(v) is not bool for v in mandatory.values()):
+            return False
+        if any(not value for key, value in mandatory.items() if key not in DEMO_PAD_COMPOSITES):
+            return False
+        blocked = set(assessment["blocked_controls"])
+        pad_blocked = blocked & DEMO_PAD_CONTROLS
+        if not pad_blocked or not blocked.issubset(DEMO_PAD_CONTROLS | DEMO_PAD_COMPOSITES):
+            return False
+        # A missing measurement or a failed capture cannot become a demo pass.
+        for check in result.get("checks", []):
+            if check.get("name") not in pad_blocked:
+                continue
+            detail = check.get("detail") or {}
+            probability = (detail.get("score") if check["name"] == "Anti-spoof / PAD"
+                           else (detail.get("sample") or {}).get("live_probability"))
+            threshold = detail.get("threshold")
+            if (check.get("status") not in {"failed", "review"}
+                    or type(probability) not in [int, float] or not math.isfinite(probability)
+                    or not 0 <= probability <= 1
+                    or type(threshold) not in [int, float] or not math.isfinite(threshold)
+                    or not 0 <= threshold <= 1):
+                return False
+            if check["name"] == "Anti-spoof / PAD" and probability != result.get("scores", {}).get("liveness"):
+                return False
+        return True
+
     def route(self, result, mandatory):
         assessment = assess_controls(result, mandatory, demo=self.mode == "demo")
         raw = {
@@ -166,6 +204,8 @@ class ScorePolicy:
         }
         score, components = self.calibrator.score(raw)
         state = result["status"]
+        demo_override = (score is not None and score >= self.automatic_threshold
+                         and self.pad_score_eligible(result, mandatory, assessment))
         if state == "attack" or mandatory.get("no_security_rejection") is False:
             decision = "REJECTED"
             security = True
@@ -179,6 +219,9 @@ class ScorePolicy:
             or any(type(v) is not bool for v in mandatory.values())
         ):
             decision = "TECHNICAL_PENDING"
+            security = False
+        elif demo_override:
+            decision = "AUTO_APPROVED"
             security = False
         elif (
             not assessment["all_passed"]
@@ -223,7 +266,7 @@ class ScorePolicy:
                 else None
             ),
             "assessment": assessment,
-            "formula": "sum(component_points * weight); automatic approval also requires every control passing",
+            "formula": "sum(component_points * weight); demo PAD uses aggregate score; other required controls must pass" if self.demo_pad_score_routing else "sum(component_points * weight); automatic approval also requires every control passing",
             "ai_evidence_usable": raw.get("ai_reliability") is True,
             "ai_validation_required": False,
             "calibrated": self.calibrator.calibrated,
@@ -232,6 +275,8 @@ class ScorePolicy:
             "decision": decision,
             "security_review": security,
             "automatic_threshold": self.automatic_threshold,
-            "demo_model_override": False,
+            "demo_model_override": bool(demo_override),
+            "demo_pad_score_routing": self.demo_pad_score_routing,
+            "demo_override_controls": sorted(set(assessment["blocked_controls"]) & DEMO_PAD_CONTROLS) if demo_override else [],
             "scope": "synthetic_only" if self.mode == "demo" else "production",
         }

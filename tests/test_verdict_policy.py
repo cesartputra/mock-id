@@ -198,7 +198,7 @@ def test_mock_dukcapil_pass_does_not_approve_uncertain_pad(policy_case):
     assert result['status']=='manual'
 
 
-def test_demo50_cannot_override_numeric_pad_uncertainty(client, face_image, policy_case):
+def test_demo50_accepts_measured_pad_uncertainty_with_valid_identity_and_capture(client, face_image, policy_case):
     state,run,session=policy_case
     session.document_result['fields'].update(name='PEMOHON TEST',birth='1990-01-01')
     session.proof_checked_revision=session.revision
@@ -209,9 +209,12 @@ def test_demo50_cannot_override_numeric_pad_uncertainty(client, face_image, poli
     result=run()
     assert result['status']=='manual'
     routed=workflow.ingest(session,result,face_image,face_image,[face_image])
-    assert routed['state']=='MANUAL_PENDING' and not routed['routing']['demo_model_override']
+    assert routed['state']=='AUTO_APPROVED' and routed['routing']['demo_model_override']
     assert not routed['routing']['assessment']['all_passed']
-    assert client.post('/api/applications/'+routed['id']+'/slik').status_code==409
+    with workflow.repository.connect() as con:
+        assert workflow.get(con, routed['id'])['payload']['routing']['mandatory']['document_face_liveness_pad'] is False
+    assert next(c for c in result['checks'] if c['name']=='Anti-spoof / PAD')['status']=='failed'
+    assert client.post('/api/applications/'+routed['id']+'/slik').json()['state']=='SLIK_READY'
 
 
 

@@ -1,6 +1,22 @@
 # KYC evidence scoring and evaluation
 
-## Current policy: optional AI (3.2.1)
+## Current policy: aggregate PAD routing in the uncalibrated demo (3.4.1)
+
+The combined-score threshold remains **50/100 inclusive**. In the uncalibrated demo only, a measured numeric failure of recording PAD or holding-photo PAD can be routed through that combined score rather than vetoing approval separately. The two derived composites, `document_face_liveness_pad` and `approved_identity_procedure`, may remain false when their only failed inputs are those PAD measurements. Policy version: `demo-routing-v8-pad-score-demo`.
+
+All other controls remain approval gates: OCR and complete server identity, both face comparisons, visible/uncovered faces, document detection, matching NIK, hand proximity, gestures, face continuity, capture quality, bound session proof, applicant authority and absence of security rejection. Missing, duplicate, unavailable or invalid PAD measurements are not eligible. Recording PAD must match the recorded liveness score. Explicit capture, technical and attack states cannot use this exception. Production and approved calibration profiles retain their existing threshold and all-control gates.
+
+The four-component formula is unchanged:
+
+```text
+S = (0.25 F + 0.25 P + 0.10 O + 0.30 C) / 0.90
+```
+
+Raw PAD probabilities, failed checks, false composites and control-coverage penalties are preserved. The screenshot case therefore stays at **76.98 displayed points** with contributions **26.99 face + 10.77 PAD + 10.90 OCR + 28.33 controls**, while it can now qualify for the synthetic PDF. Decisions use the unrounded score; displayed contributions may not sum exactly after truncation. AI remains an optional diagnostic outside both score and gates. This is an explicit demo process policy, not statistical calibration or evidence that the PAD model became more accurate.
+
+Existing `MANUAL_PENDING` / `MANUAL_SCHEDULED` cases can be rechecked through the owner's revision-bound endpoint `POST /api/applications/{id}/demo/recheck`, carrying only `capture_revision`. The server validates retained sealed evidence, canonical subject, proof binding and authority, then routes the original result. Approval releases the scheduled slot atomically and issues the synthetic PDF. Repeated successful requests are idempotent; another owner, stale revision, expired/misbound evidence and `MANUAL_IN_REVIEW` are refused. Historical cases are not silently bulk-approved.
+
+## Historical policy: optional AI (3.2.1)
 
 The owner's temporary exception makes `Classifier gambar AI (diagnostik)` advisory only. It is excluded by name from the required inventory and workflow composite controls, even if an older result marks it `required`. Its value, reliability, absence, duplicate optional records or inference/load failure cannot change score or core completeness. Required non-AI controls still gate automatic approval. Optional diagnostics remain available for operators without a failed KYC control or manipulation verdict.
 
@@ -18,7 +34,7 @@ Feature policy `core-controls-v2-pad-min-geometry-ai-optional` requires a new ap
 
 ## Complete evidence and approval
 
-The latest owner instruction replaces the demo's numeric-model override. Every verification/validation contributes to the evidence inventory and is a gate for automatic approval. A score ≥50/100 remains necessary for the uncalibrated demo but cannot compensate for a missing, failed or inconclusive control. Operator review and automatic admission to today's quota continue for inconclusive results; technical failures remain retryable. Identity and financial PDF rules are unchanged.
+In version 3.2.0, every verification/validation contributed to the evidence inventory and was a gate for automatic approval. A score ≥50/100 was necessary for the uncalibrated demo but could not compensate for a missing, failed or inconclusive control. Operator review and automatic admission to today's quota continued for inconclusive results; technical failures remained retryable. Identity and financial PDF rules were unchanged. The current 3.4.1 exception above supersedes this historical PAD routing rule.
 
 The required inventory covers recorded motion/proof, OCR, capture quality, both visibility checks, both face matches, card detection, matching NIK, hand presence, measured gestures, face continuity, recording PAD, holding-photo PAD, AI image evidence, and Dukcapil. Bound proof, complete server identity, security rejection, applicant authority and identity procedure are also assessed. Missing/duplicate controls and newly added uncertain checks cannot hide through an `advisory` effect. Mock Dukcapil contributes a demo simulation only; it cannot satisfy the official-source requirement in production.
 

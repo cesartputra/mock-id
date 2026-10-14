@@ -125,7 +125,7 @@ class VerificationService:
                         result["warnings"].append(
                             {
                                 "code": "pad_review",
-                                "message": "Wajah terdeteksi, tetapi penilaian anti-spoof belum meyakinkan. Ikuti tantangan gerakan; hasil memerlukan pemeriksaan manual sebelum disetujui.",
+                                "message": "Wajah terdeteksi, tetapi penilaian anti-spoof belum meyakinkan. Ikuti tantangan gerakan. Keputusan mengikuti skor gabungan demo dan kontrol identitas/capture.",
                             }
                         )
                     else:
@@ -262,7 +262,7 @@ class VerificationService:
                 passed = live["passed"] and same_face
             reason='Gerakan dan anti-spoof terpenuhi.' if passed else ('Risiko foto/layar terdeteksi. Gunakan wajah langsung di kamera.' if minimum<rules['pad_probability'] else 'Gerakan wajah belum memenuhi tantangan. Foto statis atau gerakan kartu tidak menggantikan kedipan, senyum, dan putaran kepala.' if not live['passed'] else 'Wajah pada rekaman tidak konsisten. Rekam ulang dengan satu pemohon.')
             if passed and review_required:
-                reason = "Gerakan terbaca. Penilaian PAD memerlukan pemeriksaan manual; KYC belum disetujui."
+                reason = "Gerakan terbaca. Nilai PAD dicatat untuk skor gabungan demo; keputusan KYC ditentukan setelah foto bersama KTP diperiksa."
             return {
                 "passed": bool(passed),
                 "reason": reason,
@@ -392,7 +392,7 @@ class VerificationService:
                 stage = 'holding'
                 add('PAD foto memegang KTP', held_pad['live_probability'] >= rules['pad_probability'],
                     {'sample': held_pad, 'threshold': rules['pad_probability'],
-                     'message': 'PAD foto memegang KTP merupakan kontrol terpisah yang memerlukan tinjauan bila rendah; bukan pemeriksaan bahan kartu.'})
+                     'message': 'PAD foto memegang KTP dicatat terpisah. Mode demo mempertimbangkan skor gabungan; ini bukan pemeriksaan bahan kartu.'})
                 stage = 'liveness'
                 add('Tantangan liveness', live['passed'], live)
                 same_face = min(continuity) >= rules["face_cosine"]
@@ -434,7 +434,7 @@ class VerificationService:
                     if self.pad_review_enabled:
                         status, reason = (
                             "manual",
-                            "Penilaian anti-spoof belum meyakinkan. Model belum dikalibrasi untuk webcam lokal; diperlukan pemeriksaan manual sebelum KYC disetujui.",
+                            "Penilaian anti-spoof belum meyakinkan. Nilai PAD tetap dicatat; routing demo mempertimbangkan skor gabungan dan kontrol identitas/capture.",
                         )
                     else:
                         status, reason = (
@@ -442,7 +442,7 @@ class VerificationService:
                             "Model anti-spoof / PAD memberi sinyal risiko foto atau layar. Perlu tinjauan keamanan; skor bukan bukti pasti serangan.",
                         )
                 elif held_pad['live_probability'] < rules['pad_probability']:
-                    status, reason = 'manual', 'Bukti PAD foto KYC belum meyakinkan. Diperlukan pemeriksaan petugas.'
+                    status, reason = 'manual', 'Skor PAD foto KYC belum memenuhi ambang model. Nilainya dicatat untuk routing demo; kontrol identitas dan capture tetap diperiksa.'
                 elif not same_card or face_score < rules['face_cosine'] or kyc_face_score < rules['face_cosine'] or not same_face:
                     status, reason = 'manual', 'Kesesuaian dokumen atau wajah belum memenuhi ambang. Perlu pemeriksaan petugas.'
         except CaptureError as exc:

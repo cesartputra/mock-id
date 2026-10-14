@@ -16,6 +16,10 @@ class Attestation(BaseModel):
     accepted: bool
 
 
+class DemoRecheck(BaseModel):
+    capture_revision: int = Field(ge=0, strict=True)
+
+
 class Booking(BaseModel):
     day: str
 
@@ -87,6 +91,15 @@ def listing(request: Request):
 @router.get("/applications/{application_id}")
 def status(application_id: str, request: Request):
     return request.app.state.workflow.snapshot(application_id, actor(request))
+
+
+@router.post("/applications/{application_id}/demo/recheck")
+def recheck_demo(application_id: str, body: DemoRecheck, request: Request):
+    who = actor(request)
+    outcome = request.app.state.workflow.recheck_demo_policy(application_id, who, body.capture_revision)
+    if outcome["state"] == "AUTO_APPROVED":
+        outcome = request.app.state.slik.issue(application_id, who)
+    return outcome
 
 
 @router.post("/applications/{application_id}/attest")

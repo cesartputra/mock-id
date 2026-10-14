@@ -1,5 +1,15 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Validasi terbaru 3.4.1 — 14 Oktober 2026
+
+Suite penuh lulus **315 tes Python dan 75 tes JavaScript**, dengan **2 skip lingkungan** (CUDA native / server PostgreSQL) dan satu peringatan deprecation Starlette/httpx. Pemeriksaan sintaks Python/JavaScript dan whitespace diff lulus. Tidak ada model atau dependency baru.
+
+Empat puluh tes Python baru memeriksa contoh skor 76,98 dengan kontrol PAD gagal yang tetap tercatat, batas 49,999/50/50,001, kewajiban identitas/wajah/gerakan/kualitas/proof/kewenangan, penolakan PAD hilang/duplikat/tidak tersedia/invalid, serta produksi/profil terkalibrasi yang tetap ketat. Penilaian ulang kasus lama diuji dari bukti terenkripsi hingga PDF dengan identitas server: slot manual dilepas, keputusan/penerbitan idempoten, bytes bukti asli tidak berubah, pemilik lain/versi lama/retensi habis/binding salah/attestation hilang/kasus sedang diperiksa tetap ditolak.
+
+Tiga tes JavaScript baru memeriksa penjelasan routing dan tombol kasus lama, POST yang hanya membawa versi capture, pencegahan klik ganda, pemantauan unduhan, serta respons lama yang tidak menggambar ulang atau mengunduh PDF setelah halaman/pemilik berubah.
+
+QA browser memakai server/database terisolasi dan fixture protokol berlabel **data/skor sintetis**: kasus 76,98 berstatus `MANUAL_SCHEDULED` diproses melalui tombol UI hingga `SLIK_READY`, tracker selesai dan unduhan otomatis terpicu. Nilai/rincian PAD rendah tetap terlihat pada hasil. Template halaman verifikasi dengan CSS aktual diperiksa: garis judul merah 3 px dan tepi atas panel abu-abu 1 px, tanpa garis merah ganda. Screenshot chat tersimpan di `outputs/app-341-score-pass.jpg` dan `outputs/app-341-red-line.jpg`. Ini bukti routing/otorisasi/layout/transport PDF, bukan ukuran akurasi biometrik; tidak ada KTP atau webcam pribadi yang dipakai.
+
 Jalankan `npm run setup:test`, `npm run check`, `npm test`, dan `npm run benchmark:coreml` pada Mac arm64. Bobot nyata harus tersedia melalui `npm run setup`; checksum tetap diperiksa. Semua fixture protokol/UI diberi label, tidak menjadi preset keputusan pengguna.
 
 ## Hasil pengujian

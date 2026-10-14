@@ -92,3 +92,13 @@ Tidak ada password pengguna yang diubah, diminta di chat, atau dimasukkan oleh a
 ## Pembaruan 3.1.3: daftar akun lokal
 
 `npm run check`, pemeriksaan sintaks wrapper Node, `npm run user:list` dan `--help` lulus. Suite terarah akun/password/workflow: **60 tes Python lulus**. Tiga tes baru memastikan akun password/role/status dapat dibaca dengan filter, kapabilitas browser dikecualikan, password/hash tidak ditampilkan, password/sesi/audit/evidence tidak berubah, serta database/folder/kunci tidak dibuat ketika database tidak ada. Full regression sebelumnya pada 3.1.2: 209 Python, 48 Node, 2 environment skip; tidak ada perubahan model atau alur capture pada pembaruan listing ini.
+
+## Pembaruan 3.3.0 Persetujuan dan CAPTCHA puzzle
+
+Pada 14 Oktober 2026, suite Python penuh lulus **257 tes, 2 environment skip**, dengan satu peringatan deprecation Starlette/httpx. Suite JavaScript akhir lulus **63 tes**, tanpa skip/gagal; syntax/compile check lulus. Setelah penyesuaian checkbox menjadi dua tahap dan pemeriksaan slider otomatis, seluruh tes JavaScript serta enam tes Python preflight dijalankan kembali dan lulus.
+
+Tes preflight memeriksa penolakan sesi pemohon tanpa persetujuan/CAPTCHA, penyimpanan attestation server, gambar PNG lokal tanpa jawaban numerik dalam respons, jawaban salah, expiry, pembaruan challenge, isolasi pemilik, konsumsi receipt atomik/sekali pakai, dan sesi baru versus pengambilan ulang tahap. Fixture memakai pemilik/database disposable dan jawaban dari state server khusus pengujian; tidak menilai ketahanan CAPTCHA terhadap bot tingkat lanjut.
+
+Tes UI menjalankan class yang dikirim ke browser: checkbox dan Saya Mengerti mendahului permintaan puzzle; consent/puzzle wajib sebelum sesi dibuat; refresh/back/cancel membatalkan receipt/respons lama; expiry menonaktifkan lanjut. Pointer drag tidak diperiksa selama masih ditahan, release memeriksa posisi akhir sekali, keyboard input memakai debounce, posisi salah yang tidak berubah tidak dikirim berulang, dan pembatalan menghapus pemeriksaan tertunda.
+
+QA browser memakai server/data terisolasi pada localhost. Dialog pernyataan, checkbox, pengaktifan Saya Mengerti, dan tampilan CAPTCHA tanpa tombol Periksa puzzle diperiksa pada desktop 1280×900 dan mobile 390×844. Tombol bawah tetap terlihat saat isi dialog digulir. Tidak ada KTP atau kamera pribadi yang digunakan dalam QA. Screenshot berada di workspace chat: outputs/app-330-consent-desktop.jpg dan outputs/app-330-captcha-mobile.jpg.

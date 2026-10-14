@@ -21,7 +21,7 @@ from app.services.workflow import JAKARTA
 from app.services.slik import DEMO_MARKER, MockSlikAdapter
 from app.model.entities import CaptureSession
 from test_registration import payload
-from conftest import complete_control_fixture
+from conftest import complete_control_fixture, verification_entry_body
 
 
 def account(client, login="another-user", role="applicant"):
@@ -556,7 +556,8 @@ def test_helpdesk_cannot_access_another_assigned_case(client, face_image):
 
 def test_real_authenticated_application_creation_and_self_scope(client):
     owner, headers = account(client, "owned-capture-user")
-    created = client.post("/api/sessions", headers=headers).json()
+    created = client.post("/api/sessions", headers=headers,
+                          json=verification_entry_body(client, headers)).json()
     other, other_headers = account(client, "another-capture-user")
     assert (
         client.post(
@@ -789,7 +790,7 @@ def test_browser_owner_without_login_and_staff_cookie_isolation(client):
         client.post("/api/auth/guest", headers=public).json()["principal"]["id"]
         == who["id"]
     )
-    session = client.post("/api/sessions", json={}, headers=public).json()
+    session = client.post("/api/sessions", json=verification_entry_body(client, public), headers=public).json()
     assert session["application_id"]
     assert len(client.get("/api/applications", headers=public).json()) == 1
     assert client.get("/api/workspace", headers=public).status_code == 403

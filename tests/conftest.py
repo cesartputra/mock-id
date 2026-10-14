@@ -46,6 +46,16 @@ def encoded(image):
     return cv2.imencode('.jpg',image)[1].tobytes()
 
 
+def verification_entry_body(client, headers=None):
+    """Protocol fixture: solve a real issued puzzle using its private test state."""
+    puzzle = client.post('/api/verification-entry/challenge', headers=headers).json()
+    private = client.app.state.verification_entry.challenges[puzzle['challenge_id']]
+    solved = client.post('/api/verification-entry/solve', headers=headers,
+                         json={'challenge_id': private.id, 'offset': private.target_x})
+    assert solved.status_code == 200, solved.text
+    return {'consent': True, 'captcha_token': solved.json()['captcha_token']}
+
+
 def complete_control_fixture():
     """Protocol fixture only: no claim of actual model/security accuracy."""
     from app.services.assessment import CONTROL_NAMES

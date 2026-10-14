@@ -23,6 +23,7 @@ from app.services.liveness import LiveCapture
 from app.services.document_consensus import DocumentConsensus
 from app.services.auth import actor
 from app.services.workflow import TRANSITIONS
+from app.services.verification_entry import CONSENT_VERSION
 
 router = APIRouter(prefix='/api', dependencies=[Security(APIKeyHeader(name='X-Local-Client', auto_error=False))])
 
@@ -212,6 +213,8 @@ def workspace(request: Request):
 
 class CaptureStart(BaseModel):
     application_id: str | None = None
+    consent: bool = Field(default=False, strict=True)
+    captcha_token: str | None = Field(default=None, min_length=20, max_length=100)
 
 
 @router.post('/sessions')
@@ -220,12 +223,24 @@ def create_session(request: Request, body: CaptureStart | None = None):
     # The optional persistent application is resumed only by its owner. Each
     # new camera session invalidates the preceding evidence generation.
     who = actor(request)
+    # Public applicants must complete preflight. Authenticated administrators
+    # retain their existing internal API path; the browser UI gates both roles.
+    gated = who['role'] == 'applicant' or bool(body and (body.consent or body.captcha_token))
+    if gated:
+        if not body or not body.consent:
+            raise HTTPException(403, 'Setujui pemrosesan capture sebelum verifikasi.')
+        if not body.captcha_token:
+            raise HTTPException(403, 'Selesaikan CAPTCHA sebelum melanjutkan verifikasi.')
+        request.app.state.verification_entry.consume(who['id'], body.captcha_token)
     request.app.state.auth.limit('session-start:'+who['id'],12,3600)
     if body and body.application_id:
         snapshot = request.app.state.workflow.snapshot(body.application_id, who)
         app = request.app.state.workflow.invalidate(body.application_id, who, snapshot['capture_revision']+1,new_capture=True)
     else:
         app = request.app.state.workflow.create(who)
+    if gated:
+        request.app.state.workflow.attest(app['id'], who, True)
+        repository.audit('Persetujuan capture dan CAPTCHA', CONSENT_VERSION, app['id'])
     session = sessions.create(who['id'], app['id'], app['revision'])
     repository.audit('Sesi dibuat', 'Capture OCR, liveness, dan KYC lokal.', session.id)
     return session.public()

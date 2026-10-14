@@ -344,8 +344,7 @@ document.addEventListener("click", async (event) => {
     } else if (button.hasAttribute("data-capacity-config"))
       await showCapacityConfig();
     else if (button.dataset.resumeCapture) {
-      await newFlow(false, button.dataset.resumeCapture);
-      await navigate("verify");
+      if (await newFlow(false, button.dataset.resumeCapture)) await navigate("verify");
     } else if (button.dataset.persistentRegistration) {
       selectedApplication = await api(
         "/applications/" + button.dataset.persistentRegistration,

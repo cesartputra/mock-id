@@ -6,6 +6,7 @@ run(process.execPath, [
   "tests/test_quality_gate.cjs",
   "tests/test_camera_stream.cjs",
   "tests/test_public_ui.cjs",
+  "tests/test_verification_entry.cjs",
   "tests/test_report_delivery.cjs",
   "tests/test_capture_feedback.cjs",
   "tests/test_capture_state.cjs",

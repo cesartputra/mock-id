@@ -129,6 +129,10 @@ let workspace = {
   exportURL = null,
   toastTimer;
 const urls = new Set();
+const verificationEntry = new VerificationEntryGate({
+  api, showDialog: modal, getDialog: () => $("#modal"), escape: esc,
+});
+let navigationRevision = 0;
 function preview(blob) {
   const url = URL.createObjectURL(blob);
   urls.add(url);
@@ -290,9 +294,12 @@ function render() {
     `<div class="screen-enter">${page === "dashboard" ? adminMetricsView() : ""}${view}</div>`;
 }
 async function navigate(target) {
+  const navigation = ++navigationRevision;
+  if (target !== "verify") verificationEntry.cancel();
   page = names[target] ? target : "home";
   try {
     await reloadWorkspace();
+    if (navigation !== navigationRevision) return;
     if (!principal && page !== "account") {
       page = "account";
       history.replaceState(null, "", "#account");
@@ -319,7 +326,11 @@ async function navigate(target) {
           "/applications/" + encodeURIComponent(active),
         );
     }
-    if (page === "verify" && !flow) await newFlow(false);
+    if (page === "verify" && !flow) {
+      const started = await newFlow(false);
+      if (navigation !== navigationRevision) return;
+      if (!started) page = principal?.role === "admin" ? "dashboard" : "registration";
+    }
     history.replaceState(null, "", "#" + page);
     render();
     window.scrollTo(0, 0);
@@ -333,19 +344,22 @@ async function navigate(target) {
   }
 }
 async function newFlow(show = true, applicationId = null) {
-  if (busy || captureResetting) return;
+  if (busy || captureResetting || verificationEntry.pending) return false;
   stopCamera();
   $("#modal").close();
-  releasePreviews();
-  selectedApplication = null;
-  stopDeliveryWatch();
   if (!principal) {
     principal = (await api("/auth/guest", { method: "POST" })).principal;
   }
+  const epoch = authEpoch;
+  const entry = await verificationEntry.open();
+  if (!entry || epoch !== authEpoch) return false;
   const session = await api("/sessions", {
     method: "POST",
-    body: JSON.stringify({ application_id: applicationId }),
+    body: JSON.stringify({ application_id: applicationId, ...entry }),
   });
+  releasePreviews();
+  selectedApplication = null;
+  stopDeliveryWatch();
   rememberApplication(session.application_id);
   flow = {
     session,
@@ -361,7 +375,7 @@ async function newFlow(show = true, applicationId = null) {
     livenessResult: null,
     frames: [],
     manifest: [],
-    consent: false,
+    consent: true,
     result: null,
   };
   if (show) {
@@ -370,6 +384,7 @@ async function newFlow(show = true, applicationId = null) {
     render();
     window.scrollTo(0, 0);
   }
+  return true;
 }
 function table(records) {
   return `<div class="table-wrap"><table><thead><tr><th>PEMOHON</th><th>ID & WAKTU</th><th>STATUS</th><th>INFERENCE</th><th>AKSI</th></tr></thead><tbody>${records.map((r) => `<tr><td><div class="person-cell"><span class="person-avatar">${esc(r.name.slice(0, 2).toUpperCase())}</span><div><strong>${esc(r.name)}</strong><small>${esc(r.nik_masked)}</small></div></div></td><td><strong class="session-id">${esc(r.id)}</strong><small>${date(r.created)} WIB</small></td><td>${badge(r.status)}</td><td>${(r.duration_ms / 1000).toFixed(1)} detik<small>Hasil model lokal</small></td><td><button class="row-action" data-detail="${esc(r.id)}" aria-label="Detail ${esc(r.name)}">Detail ↗</button></td></tr>`).join("") || '<tr><td colspan="5" class="empty">Belum ada permohonan. Mulai capture untuk membuat hasil nyata.</td></tr>'}</tbody></table></div>`;
@@ -439,7 +454,7 @@ function verifyView() {
   return `${head("Verifikasi identitas", "Verifikasi identitas untuk pendaftaran debitur perseorangan.", `<span class="badge green">PERSEORANGAN · KYC LOKAL</span>`, "APPLICANT EXPERIENCE")}<div class="verification-layout"><section class="panel verification-panel"><div class="stepper">${stepNames.map((name, i) => `<div class="step ${flow.step === i ? "current" : flow.step > i ? "done" : ""}"><b>${flow.step > i ? "✓" : i + 1}</b>${name}</div>`).join("")}</div><div class="step-content">${flow.retryPlan && !busy && flow.step !== 4 ? `<div class="retry-notice"><strong>${esc(flow.retryPlan.label)}</strong><p>${esc(flow.retryPlan.reason)}</p><small>OCR, liveness, dan foto lain yang sudah tersedia dipertahankan. Pencocokan dengan capture baru tetap diperiksa ulang.</small></div>` : ""}${busy ? '<h2>Memproses model…</h2><p class="step-description">Model memproses gambar atau rekaman sesuai tahap pemeriksaan di server lokal.</p><span class="spinner"></span><p class="state-note">Tunggu hasil backend. Waktu proses bergantung perangkat dan ukuran capture.</p>' : [documentView, identityView, livenessView, holdingView, resultView][flow.step]()}</div></section><aside class="verification-aside"><section class="panel session-card"><h3>Sesi verifikasi</h3><div class="session-row"><span>ID</span><strong class="session-id">${esc(flow.session.id.slice(0, 8).toUpperCase())}</strong></div><div class="session-row"><span>Percobaan</span><strong>${flow.session.attempt} / ${flow.session.max_attempts}</strong></div><div class="session-row"><span>Berlaku sampai</span><strong>${new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(flow.session.expires_at * 1000))} WIB</strong></div><div class="state-note">Nonce sekali pakai dan batas percobaan diperiksa oleh server. Sesi capture berakhir setelah 15 menit atau saat server dimulai ulang.</div></section><section class="panel scenario-card"><h3>Model yang digunakan</h3><p>Semua analisis foto menjalankan model. Tidak ada pemilih hasil simulasi.</p>${["PaddleOCR melalui RapidOCR", "YuNet + ArcFace R50", "PIPNet + MediaPipe Hand ONNX", "CVPR 2024 Swin V2-B (face)", "ViT classifier (diagnostik tambahan)", "FaceAttribNet: kacamata & masker"].map((n) => `<div class="model-runtime-line"><span class="green-dot"></span>${n}</div>`).join("")}<div class="simulation-note">Dukcapil dianggap lolos untuk demo (MOCK). Data keuangan SLIK memakai adapter demo.</div></section></aside></div>`;
 }
 function documentView() {
-  return `<h2>Foto KTP yang akan dibaca</h2><p class="step-description">Setujui pemrosesan lalu buka kamera. Foto dan OCR berjalan otomatis setelah NIK, nama, tanggal lahir, dan potret KTP terbaca konsisten. Gunakan kartu utuh dan pencahayaan merata; unggahan gambar tetap tersedia.</p><div class="upload-zone">${icon("upload")}<h3>JPG, PNG, atau WebP</h3><p>Maksimal 5 MB / 16 megapiksel</p><div class="upload-buttons"><button class="button primary" data-camera="document" ${flow.consent ? "" : "disabled"}>Buka kamera otomatis</button><button class="button" data-upload="document">Pilih gambar KTP</button><input type="file" id="document-file" accept="image/jpeg,image/png,image/webp" hidden aria-label="Unggah KTP"></div>${flow.documentURL ? `<img class="image-preview" src="${flow.documentURL}" alt="Pratinjau foto KTP">` : ""}</div><label class="scenario"><input type="checkbox" id="consent" ${flow.consent ? "checked" : ""}><span>Saya setuju memproses capture pada server lokal ini.<small>Saya meminta informasi untuk diri sendiri. Bukti yang diperlukan disimpan terenkripsi sesuai retensi demo untuk pemeriksaan manual.</small></span></label><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><span class="micro">NIK akan dibaca model, tanpa isian contoh.</span>${flow.documentBlob ? `<button class="button primary" data-ocr ${flow.consent ? "" : "disabled"}>Baca gambar unggahan ${icon("arrow")}</button>` : ""}</div>`;
+  return `<h2>Foto KTP yang akan dibaca</h2><p class="step-description">Buka kamera untuk membaca KTP. Persetujuan dan CAPTCHA sudah diselesaikan. Foto dan OCR berjalan otomatis setelah NIK, nama, tanggal lahir, dan potret KTP terbaca konsisten. Gunakan kartu utuh dan pencahayaan merata; unggahan gambar tetap tersedia.</p><div class="upload-zone">${icon("upload")}<h3>JPG, PNG, atau WebP</h3><p>Maksimal 5 MB / 16 megapiksel</p><div class="upload-buttons"><button class="button primary" data-camera="document" ${flow.consent ? "" : "disabled"}>Buka kamera otomatis</button><button class="button" data-upload="document" ${flow.consent ? "" : "disabled"}>Pilih gambar KTP</button><input type="file" id="document-file" accept="image/jpeg,image/png,image/webp" hidden aria-label="Unggah KTP"></div>${flow.documentURL ? `<img class="image-preview" src="${flow.documentURL}" alt="Pratinjau foto KTP">` : ""}</div><p class="text-error" id="step-error" role="alert"></p><div class="form-actions"><span class="micro">NIK akan dibaca model, tanpa isian contoh.</span>${flow.documentBlob ? `<button class="button primary" data-ocr ${flow.consent ? "" : "disabled"}>Baca gambar unggahan ${icon("arrow")}</button>` : ""}</div>`;
 }
 function identityView() {
   const fields = flow.ocr.fields;
@@ -1331,16 +1346,6 @@ document.addEventListener("click", async (event) => {
 document.addEventListener("change", async (event) => {
   const target = event.target;
   try {
-    if (target.id === "consent") {
-      await api(`/applications/${flow.session.application_id}/attest`, {
-        method: "POST",
-        body: JSON.stringify({ accepted: target.checked }),
-      });
-      flow.consent = target.checked;
-      const readButton = $("[data-ocr]");
-      if (readButton) readButton.disabled = !flow.consent || !flow.documentBlob;
-      $('[data-camera="document"]').disabled = !flow.consent;
-    }
     if (target.id === "document-file" || target.id === "holding-file")
       await setImage(target.files[0], target.id.replace("-file", ""));
     if (target.id === "queue-filter") {

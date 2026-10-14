@@ -22,6 +22,8 @@ from app.services.workflow import WorkflowService
 from app.services.manual import ManualService
 from app.services.slik import SlikService
 from app.services.inference_queue import InferenceQueue
+from app.services.verification_entry import VerificationEntryService
+from app.controller.verification_entry import router as verification_entry_router
 from app.controller.auth import router as auth_router
 from app.controller.applications import router as applications_router
 import os
@@ -34,6 +36,7 @@ async def lifespan(app):
     app.state.repository.migrate()
     app.state.box = SecretBox(app.state.data_directory)
     app.state.auth = AuthService(app.state.repository, app.state.box)
+    app.state.verification_entry = VerificationEntryService()
     storage = (
         S3PrivateStorage(
             os.environ["MOCK_ID_EVIDENCE_BUCKET"], os.getenv("MOCK_ID_S3_ENDPOINT")
@@ -63,6 +66,7 @@ async def lifespan(app):
         while True:
             await asyncio.sleep(30)
             app.state.sessions.purge()
+            app.state.verification_entry.purge()
             await asyncio.to_thread(app.state.evidence.purge)
 
     cleanup = asyncio.create_task(expire_sessions())
@@ -81,7 +85,7 @@ async def lifespan(app):
 def create_app(data_directory=DATA):
     app = FastAPI(
         title="mock-id local identity verification",
-        version="3.2.1",
+        version="3.3.0",
         lifespan=lifespan,
         telemetry={
             "tracing": False,
@@ -230,6 +234,7 @@ def create_app(data_directory=DATA):
     app.include_router(auth_router)
     app.include_router(applications_router)
     app.include_router(router)
+    app.include_router(verification_entry_router)
     app.include_router(registration_router)
     static = Path(__file__).parent / "view" / "static"
     app.mount("/static", StaticFiles(directory=static), name="static")

@@ -1,5 +1,23 @@
 # mock-id — verifikasi identitas lokal
 
+## Pembaruan 3.3.0 Persetujuan dan puzzle sebelum verifikasi
+
+Pada branch `feat/verification-consent-captcha`, tombol **Lanjutkan** pada pendaftaran perseorangan membuka dialog berisi daftar pernyataan. Pemohon mencentang **Saya menyatakan telah membaca, memahami, dan menyetujui seluruh pernyataan ini**, lalu menekan **Saya Mengerti**. Tahap berikutnya menampilkan CAPTCHA puzzle: geser potongan ke lubang (mouse, sentuhan, atau tombol panah). Jawaban diperiksa otomatis saat slider dilepas atau berhenti digeser; tidak ada tombol Periksa puzzle. **Lanjut ke verifikasi** aktif setelah jawaban dinyatakan cocok oleh server. Menutup dialog tidak membuat sesi atau menghapus capture sebelumnya. Checkbox tidak lagi ditampilkan pada halaman OCR. Badan usaha dan debitur meninggal dunia tetap memakai jalur dokumen tanpa KYC.
+
+Puzzle dibuat dengan Pillow di backend lokal, tanpa layanan CAPTCHA eksternal, foto pemohon, atau bobot tambahan. Server menerbitkan challenge terikat pemilik (3 menit), memeriksa jawaban, dan memberikan receipt sekali pakai (2 menit). Sesi pemohon menolak permintaan tanpa persetujuan/receipt yang sah. Salah posisi dapat dicoba kembali; **Ganti puzzle** memperbarui challenge. Pengambilan ulang tahap dalam sesi yang sama mempertahankan persetujuan; sesi baru meminta preflight baru. API internal administrator yang telah login tetap tersedia. CAPTCHA ringan ini merupakan penjagaan demo, bukan pembuktian ketahanan terhadap bot tingkat lanjut.
+
+Untuk memperbarui:
+
+```bash
+git fetch origin
+git switch feat/verification-consent-captcha
+git pull --ff-only
+npm start
+```
+
+Hentikan server lama sebelum `npm start`, lalu reload `http://127.0.0.1:4173`. Tidak perlu setup bobot atau dependency baru.
+
+
 Pembaruan **3.2.1**: bukti classifier AI sementara menjadi **diagnostik opsional**, dikeluarkan dari syarat kelulusan, kelengkapan kontrol, dan skor routing. Skor tinggi, hasil antar input tidak konsisten, bobot AI hilang/checksum salah, atau error inference AI tidak menahan KYC utama. Seluruh kontrol non-AI tetap wajib. Bobot relatif empat komponen dipertahankan dan dinormalisasi: **skor = (0,25 × wajah + 0,25 × PAD + 0,10 × OCR + 0,30 × kelengkapan kontrol) / 0,90**. Tampilan menunjukkan bobot sekitar 27,78%, 27,78%, 11,11%, 33,33%; nilai AI asli tetap tersedia untuk operator bila model tersedia. Profil/artefak kalibrasi berubah agar profil lima komponen lama tidak dipakai secara diam-diam.
 
 Jalankan `git pull --ff-only` di `fix/webcam-pad-scoring`, hentikan server lama, `npm start`, lalu reload browser dan mulai verifikasi baru. Tidak perlu bobot/dependency baru. Permohonan yang sudah `MANUAL_SCHEDULED` mempertahankan keputusan/kuota yang tercatat; pembaruan ini tidak membatalkan reservasi atau menyetujui hasil historis otomatis. PDF demo tetap mengikuti identitas KTP server.

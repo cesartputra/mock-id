@@ -6,6 +6,7 @@ run(process.execPath, ["--check", "app/view/static/registration.js"]);
 run(process.execPath, ["--check", "app/view/static/capture-state.js"]);
 run(process.execPath, ["--check", "app/view/static/auto-capture.js"]);
 run(process.execPath, ["--check", "app/view/static/workflow-ui.js"]);
+run(process.execPath, ["--check", "app/view/static/verification-entry.js"]);
 run(process.execPath, ["--check", "app/view/static/quality-gate.js"]);
 run(process.execPath, ["--check", "app/view/static/report-delivery.js"]);
 run(venvPython, ["-m", "compileall", "-q", "app", "scripts"]);

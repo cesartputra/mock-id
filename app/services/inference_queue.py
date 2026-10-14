@@ -52,9 +52,11 @@ class InferenceQueue:
             return await asyncio.wait_for(
                 asyncio.shield(asyncio.wrap_future(future)), timeout=self.timeout
             )
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
             if session and flag:
                 future.add_done_callback(lambda _: setattr(session, flag, False))
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             raise HTTPException(
                 503,
                 "Model belum selesai dalam batas waktu. Tunggu sebelum mengambil ulang.",

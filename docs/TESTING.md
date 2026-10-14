@@ -1,5 +1,13 @@
 # Validasi lokal V3 — 12 Oktober 2026
 
+## Audit Ponytail — 14 Oktober 2026
+
+Branch `refactor/ponytail-improvements`: suite penuh final lulus **355 tes Python dan 105 tes JavaScript**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation Starlette/httpx. Syntax/compile dan `git diff --check` lulus.
+
+Empat regresi Python tambahan menguji cancellation antrean yang tetap menahan slot sampai pekerjaan native selesai, antrean penuh yang tidak mengonsumsi sequence/hash, verifikasi dibatalkan yang masih dapat retry dengan nonce baru, dan request dibatalkan versi lama yang tidak menghapus hasil/lock capture versi baru. Enam regresi JavaScript tambahan menguji frame HTTP 429 yang dicoba kembali dengan sequence yang sama, respons sesi lama dan start ganda, retake stale, error setelah akun berubah, hasil lama yang tidak mengarahkan/mengunduh PDF, dan entri validasi JSON yang salah format. Tes lifecycle kamera yang sudah ada juga memeriksa retake yang tidak lagi berlaku tidak membuka kamera.
+
+Kasus failure direproduksi sebelum perbaikan. Fixture protokol mengisolasi concurrency/transport; suite model lokal yang sudah ada tetap dijalankan. Tidak ada data pemohon nyata, webcam pribadi atau backend deployment baru yang dipakai. Cakupan dan risiko tersisa dijelaskan di [catatan audit](PONYTAIL-AUDIT.md).
+
 ## Validasi terbaru 3.6.1 — 14 Oktober 2026
 
 Suite penuh Python lulus **351 tes**, dengan 2 skip lingkungan CUDA/PostgreSQL dan satu peringatan deprecation dependency. Suite JavaScript final lulus **99 tes**; teks konfirmasi preflight yang diperiksa regresi tetap dipertahankan. Syntax/compile dan whitespace diff lulus. Tidak ada bobot/dependency baru.

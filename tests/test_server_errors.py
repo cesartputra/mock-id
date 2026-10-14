@@ -113,3 +113,56 @@ def test_retake_audit_failure_preserves_nonce_and_capture_before_retry(client, f
     assert client.post(route, json=data).status_code == 200
     assert session.document is None and session.document_result is None
     assert session.liveness_result is before['liveness_result']
+
+
+def test_cancelled_verification_retains_retry_without_publishing_a_decision(client, face_image, monkeypatch):
+    import asyncio
+    from starlette.requests import Request
+    from starlette.datastructures import UploadFile
+    from io import BytesIO
+    from app.controller.verification import verify
+    session, route, files, data = verification_request(client, face_image)
+    request = Request({'type': 'http', 'app': client.app, 'headers': []})
+    request.state.actor = client.fixture_actor
+    async def cancelled(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(client.app.state.inference_queue, 'run', cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(verify(session.id, request, nonce=data['nonce'], proof_token=data['proof_token'],
+            selfie=UploadFile(BytesIO(files['selfie'][1])), holding=UploadFile(BytesIO(files['holding'][1])),
+            manifest='[]', frames=[]))
+    assert session.consumed and not session.processing
+    assert session.last_result['status'] == 'technical'
+    assert session.last_result['retry']['stage'] == 'verify'
+    assert session.liveness_proof == data['proof_token']
+    assert client.app.state.workflow.snapshot(session.application_id, client.fixture_actor)['state'] == 'TECHNICAL_PENDING'
+    retry = client.post(f'/api/sessions/{session.id}/retry')
+    assert retry.status_code == 200, retry.text
+    assert retry.json()['nonce'] != data['nonce']
+
+
+def test_old_cancelled_verification_cannot_clear_or_replace_a_new_capture(client, face_image, monkeypatch):
+    import asyncio
+    from io import BytesIO
+    from starlette.requests import Request
+    from starlette.datastructures import UploadFile
+    from app.controller.verification import verify
+    session, _route, files, data = verification_request(client, face_image)
+    request = Request({'type': 'http', 'app': client.app, 'headers': []})
+    request.state.actor = client.fixture_actor
+    newer = {'status': 'capture', 'reason': 'New revision fixture'}
+    async def replaced(*_args, **_kwargs):
+        session.processing = False
+        client.app.state.sessions.reset(session.id, 'holding', data['nonce'])
+        client.app.state.workflow.invalidate(session.application_id, client.fixture_actor, session.revision)
+        session.processing = True  # New revision owns its commit lock.
+        session.last_result = newer
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(client.app.state.inference_queue, 'run', replaced)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(verify(session.id, request, nonce=data['nonce'], proof_token=data['proof_token'],
+            selfie=UploadFile(BytesIO(files['selfie'][1])), holding=UploadFile(BytesIO(files['holding'][1])),
+            manifest='[]', frames=[]))
+    assert session.revision == 1 and session.processing
+    assert session.last_result is newer
+    assert client.app.state.workflow.snapshot(session.application_id, client.fixture_actor)['state'] == 'VERIFYING'

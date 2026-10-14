@@ -99,7 +99,7 @@ test("new capture creates no session or destructive reset until preflight comple
     const calls = [];
     const original = { documentURL: "existing-preview" };
     const context = vm.createContext({ busy: false, captureResetting: false, principal: { role: "applicant" },
-      authEpoch: 0, flow: original, selectedApplication: { id: "old" }, stopCamera() {},
+      authEpoch: 0, navigationRevision: 0, flow: original, selectedApplication: { id: "old" }, stopCamera() {},
       $: () => ({ close() {} }), releasePreviews() { reset++; }, stopDeliveryWatch() {}, rememberApplication() {},
       clearRegistrationState() { registrationReset++; },
       verificationEntry: { pending: null, open: () => new Promise((reply) => { resolve = reply; }) },
@@ -226,7 +226,7 @@ test("server failure stays actionable without renewing puzzles in a loop", async
 test("automatic receipt completion creates exactly one server session through newFlow", async () => {
   const ui=gate(async path=>path.endsWith('challenge')?puzzle:{captcha_token:'auto-receipt',expires_in:120});
   const calls=[];
-  const context=vm.createContext({busy:false,captureResetting:false,principal:{role:'applicant'},authEpoch:0,
+  const context=vm.createContext({busy:false,captureResetting:false,principal:{role:'applicant'},authEpoch:0,navigationRevision:0,
     flow:null,selectedApplication:null,stopCamera(){},$:()=>({close(){}}),releasePreviews(){},stopDeliveryWatch(){},rememberApplication(){},clearRegistrationState(){},
     verificationEntry:ui.instance,api:async(path,options)=>{calls.push([path,JSON.parse(options.body)]);return{id:'SESSION-AUTO',application_id:'APP-AUTO'};},
   });
@@ -235,4 +235,35 @@ test("automatic receipt completion creates exactly one server session through ne
   await Promise.all([ui.instance.solve(),ui.instance.solve()]);assert.equal(await start,true);
   ui.instance.continue();assert.equal(calls.length,1);assert.equal(calls[0][1].captcha_token,'auto-receipt');
   assert.equal(context.flow.session.id,'SESSION-AUTO');assert.equal(ui.dialog.open,false);
+});
+
+test("session creation ignores navigation changes and holds admission until its response", async () => {
+  for (const phase of ["preflight","session","duplicate","failure"]) {
+    let entryReply, sessionReply, sessionFail, opens=0, calls=0, resets=0;
+    const original={session:{id:"existing"}}, remembered=[];
+    const context=vm.createContext({busy:false,captureResetting:false,principal:{role:"applicant"},authEpoch:0,navigationRevision:0,
+      flow:original,selectedApplication:null,stopCamera(){},$:()=>({close(){}}),
+      releasePreviews(){resets++;},stopDeliveryWatch(){},rememberApplication:id=>remembered.push(id),
+      verificationEntry:{pending:null,open:()=>{opens++;return phase==="preflight" ? new Promise(r=>entryReply=r) : Promise.resolve({consent:true,captcha_token:"fixture-receipt"});}},
+      api:()=>{calls++;return new Promise((resolve,reject)=>{sessionReply=resolve;sessionFail=reject;});},
+    });
+    vm.runInContext(source.slice(source.indexOf("async function newFlow("),source.indexOf("function table(")),context);
+    const started=context.newFlow(false);await tick();
+    if(phase==="preflight") {
+      context.navigationRevision++;entryReply({consent:true,captcha_token:"fixture-receipt"});
+      assert.equal(await started,false);assert.equal(calls,0);
+    } else if(phase==="failure") {
+      const rejected=assert.rejects(started,/Unavailable/);sessionFail(new Error("Unavailable"));await rejected;
+    } else {
+      if(phase==="session") context.navigationRevision++;
+      else {
+        const duplicate=context.newFlow(false);await tick();
+        assert.equal(opens,1);assert.equal(calls,1);assert.equal(await duplicate,false);
+      }
+      sessionReply({id:"new",application_id:"APP-NEW"});
+      assert.equal(await started,phase==="duplicate");
+    }
+    assert.equal(context.captureResetting,false);
+    if(phase!=="duplicate") {assert.equal(context.flow,original);assert.equal(resets,0);assert.deepEqual(remembered,[]);}
+  }
 });

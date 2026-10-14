@@ -54,3 +54,37 @@ def test_success_keeps_capture_locked_until_controller_commits():
         assert session.processing and not queue.pending(session.id)
     finally:
         queue.close()
+
+
+def test_cancelled_request_keeps_native_work_reserved_then_unlocks_session():
+    queue = InferenceQueue(capacity=1)
+    entered, release = threading.Event(), threading.Event()
+    session = SimpleNamespace(id='cancel-fixture', processing=True)
+
+    def work():
+        entered.set()
+        release.wait(2)
+
+    async def exercise():
+        task = asyncio.create_task(queue.run(work, session=session, flag='processing'))
+        assert await asyncio.to_thread(entered.wait, 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert session.processing and queue.pending(session.id)
+        with pytest.raises(HTTPException) as busy:
+            await queue.run(lambda: None)
+        assert busy.value.status_code == 429
+        release.set()
+        for _ in range(50):
+            if not session.processing:
+                break
+            await asyncio.sleep(.01)
+        assert not session.processing and not queue.pending(session.id)
+        assert await queue.run(lambda: 'next') == 'next'
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        release.set()
+        queue.close()

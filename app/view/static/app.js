@@ -121,7 +121,6 @@ let workspace = {
   cameraKind = null,
   cameraToken = 0,
   cameraFeedback = new CaptureFeedback(),
-  qualityGate = new QualityGate(),
   cameraLightGate = new LuminanceCheck(),
   cameraLightTimer = null,
   cameraLightBlocked = false,
@@ -360,18 +359,27 @@ async function navigate(target) {
 }
 async function newFlow(show = true, applicationId = null) {
   if (busy || captureResetting || verificationEntry.pending) return false;
+  const navigation = navigationRevision;
   stopCamera();
   $("#modal").close();
   if (!principal) {
     principal = (await api("/auth/guest", { method: "POST" })).principal;
   }
   const epoch = authEpoch;
+  if (navigation !== navigationRevision) return false;
   const entry = await verificationEntry.open();
-  if (!entry || epoch !== authEpoch) return false;
-  const session = await api("/sessions", {
-    method: "POST",
-    body: JSON.stringify({ application_id: applicationId, ...entry }),
-  });
+  if (!entry || epoch !== authEpoch || navigation !== navigationRevision) return false;
+  captureResetting = true;
+  let session;
+  try {
+    session = await api("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ application_id: applicationId, ...entry }),
+    });
+  } finally {
+    captureResetting = false;
+  }
+  if (epoch !== authEpoch || navigation !== navigationRevision) return false;
   releasePreviews();
   selectedApplication = null;
   if (typeof clearRegistrationState === "function") clearRegistrationState();
@@ -648,25 +656,28 @@ function errorMessage(error) {
 }
 async function withBusy(action) {
   if (busy) return;
+  const currentFlow = flow;
   busy = true;
   render();
   try {
     await action();
   } catch (error) {
+    if (flow !== currentFlow) return;
     toast(error.message);
     flow.error = error.message;
   } finally {
     busy = false;
-    render();
-    if (flow?.error) {
-      errorMessage(new Error(flow.error));
-      delete flow.error;
+    if (flow === currentFlow) {
+      render();
+      if (flow?.error) {
+        errorMessage(new Error(flow.error));
+        delete flow.error;
+      }
     }
   }
 }
 async function readDocument() {
   if (!flow.documentBlob || !flow.consent) return;
-  if (flow.ocr || flow.result) await prepareCapture("document", true);
   const data = new FormData();
   data.append("image", flow.documentBlob, "ktp.jpg");
   if (flow.documentCaptureToken)
@@ -687,6 +698,7 @@ async function runVerification() {
     );
   if (!flow.holdingBlob || !flow.selfieBlob || !flow.livenessResult.proof_token)
     return;
+  const currentFlow = flow;
   await withBusy(async () => {
     if (flow.pendingVerificationRetry) {
       flow.session = await api(`/sessions/${flow.session.id}/retry`, {
@@ -712,6 +724,7 @@ async function runVerification() {
     selectedApplication = flow.result.application || null;
     await reloadWorkspace();
   });
+  if (flow !== currentFlow) return;
   if (
     selectedApplication &&
     !["CAPTURE_RETRY", "TECHNICAL_PENDING"].includes(selectedApplication.state)
@@ -734,7 +747,7 @@ async function prepareCapture(stage, keepInput = false) {
       method: "POST",
       body: JSON.stringify({ stage, nonce: flow.session.nonce }),
     });
-    if (flow !== currentFlow) return;
+    if (flow !== currentFlow) return false;
     flow.session = updated;
     flow.pendingVerificationRetry = false;
     flow.result = null;
@@ -748,6 +761,7 @@ async function prepareCapture(stage, keepInput = false) {
       },
       keepInput,
     );
+    return true;
   } finally {
     captureResetting = false;
   }
@@ -755,7 +769,7 @@ async function prepareCapture(stage, keepInput = false) {
 async function retry(stage = null) {
   if (busy || captureResetting) return;
   if (stage) {
-    await prepareCapture(stage);
+    if (!(await prepareCapture(stage))) return;
     flow.retryPlan = null;
   } else {
     captureResetting = true;
@@ -847,7 +861,7 @@ async function openCamera(kind) {
     throw new Error(
       "Setujui pemrosesan lokal sebelum membuka kamera otomatis.",
     );
-  await prepareCapture(kind);
+  if (!(await prepareCapture(kind))) return;
   render();
   modal(
     kind === "liveness"
@@ -1043,7 +1057,7 @@ async function monitorCamera(token) {
   } catch (error) {
     if (token !== cameraToken || cameraCheckingPaused) return;
     cameraAutoGate?.reset();
-    if ([409, 410, 413, 429].includes(error.status)) cameraAutoStopped = true;
+    if ([409, 410, 413].includes(error.status)) cameraAutoStopped = true;
     showCameraFeedback(
       cameraFeedback.update(
         {
@@ -1225,6 +1239,12 @@ async function recordChallenges() {
           body: data,
           signal: cameraCheckAbort.signal,
         });
+      } catch (error) {
+        if (token !== cameraToken || flow !== currentFlow) return;
+        if (error.status !== 429) throw error;
+        showCameraFeedback({ready: false, warnings: [{code: "inference_busy", message: "Antrean model penuh. Tahan posisi sebentar."}]});
+        await delay(2000);
+        continue;
       } finally {
         clearTimeout(timeout);
       }
@@ -1341,7 +1361,6 @@ document.addEventListener("click", async (event) => {
       await navigate(button.dataset.page);
     } else if (button.hasAttribute("data-new")) await newFlow();
     else if (button.dataset.camera) await openCamera(button.dataset.camera);
-    else if (button.hasAttribute("data-ocr")) await readDocument();
     else if (button.hasAttribute("data-back")) {
       if (!busy) {
         flow.step = Math.max(0, flow.step - 1);

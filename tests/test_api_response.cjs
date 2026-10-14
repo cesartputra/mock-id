@@ -73,6 +73,16 @@ test("validation details remain actionable", async () => {
     /selfie: Field required/,
   );
 });
+
+test("malformed validation entries never mask the HTTP error", async () => {
+  for(const detail of [[null,12,{}],[null,{loc:12,msg:"Field required"}]]) {
+    await assert.rejects(readApiResponse(Response.json({detail},{status:422})),error=>{
+      assert.equal(error.status,422);
+      assert.match(error.message,/HTTP 422|Input: Field required/);
+      return true;
+    });
+  }
+});
 test("verification retry rotates nonce and resubmits the same captured blobs", async () => {
   const vm = require("node:vm"),
     fs = require("node:fs");
@@ -138,4 +148,18 @@ test("verification retry rotates nonce and resubmits the same captured blobs", a
   assert.equal(flow.pendingVerificationRetry, false);
   assert.equal(flow.step, 4);
   assert.equal(errors.length, 1);
+});
+
+test("a completed old verification cannot redirect or download after its flow changes", async () => {
+  const vm=require("node:vm"),fs=require("node:fs");
+  const source=fs.readFileSync("app/view/static/app.js","utf8");
+  let downloads=0;
+  const context=vm.createContext({flow:{livenessResult:{passed:true,proof_token:"old-proof"},holdingFeedback:{ready:true},holdingBlob:{},selfieBlob:{}},
+    selectedApplication:null,observeDelivery:async()=>downloads++,
+    history:{replaceState(){throw new Error("Old verification must not navigate");}},
+  });
+  context.withBusy=async()=>{context.flow=null;context.selectedApplication={id:"new",state:"SLIK_READY"};};
+  vm.runInContext(source.slice(source.indexOf("async function runVerification()"),source.indexOf("let captureResetting")),context);
+  await context.runVerification();
+  assert.equal(downloads,0);assert.equal(context.selectedApplication.id,"new");
 });

@@ -220,3 +220,31 @@ test("only checked automatic camera photos retain the exact blob and document re
   assert.equal(context.flow.holdingFeedback,holding);
   assert.equal(events.render,2);
 });
+
+test("stale retake returns false without clearing or replacing the newer flow", async () => {
+  let reply;
+  const original={session:{id:"old",nonce:"old-nonce"}};
+  const newer={session:{id:"new"}};
+  const context=vm.createContext({busy:false,captureResetting:false,flow:original,
+    stopCamera(){},api:()=>new Promise(r=>reply=r),
+    CaptureState:{reset(){throw new Error("A stale retake must not clear inputs");}},
+  });
+  vm.runInContext(source.slice(source.indexOf("async function prepareCapture("),
+    source.indexOf("async function retry(")),context);
+  const retake=context.prepareCapture("holding");context.flow=newer;reply({id:"old",revision:1});
+  assert.equal(await retake,false);
+  assert.equal(context.flow,newer);
+  assert.equal(context.captureResetting,false);
+});
+
+test("busy capture errors after an account switch do not touch cleared flow or redraw the new page", async () => {
+  let fail, renders=0, toasts=0;
+  const context=vm.createContext({busy:false,flow:{session:{id:"old"}},
+    render:()=>renders++,toast:()=>toasts++,errorMessage(){throw new Error("Stale error UI");},
+  });
+  vm.runInContext(source.slice(source.indexOf("async function withBusy("),source.indexOf("async function readDocument(")),context);
+  const pending=context.withBusy(()=>new Promise((_resolve,reject)=>fail=reject));
+  context.flow=null;fail(new Error("Akun berubah"));await pending;
+  assert.equal(context.busy,false);assert.equal(context.flow,null);
+  assert.equal(renders,1);assert.equal(toasts,0);
+});

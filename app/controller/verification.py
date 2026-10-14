@@ -7,12 +7,10 @@ import math
 import logging
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from app.config import MAX_IMAGE_BYTES, MAX_FRAME_BYTES, MAX_FRAMES, MAX_ATTEMPTS
@@ -22,7 +20,6 @@ from app.services.pipeline import ModelUnavailable
 from app.services.liveness import LiveCapture
 from app.services.document_consensus import DocumentConsensus
 from app.services.auth import actor
-from app.services.workflow import TRANSITIONS
 from app.services.verification_entry import CONSENT_VERSION
 
 router = APIRouter(prefix='/api', dependencies=[Security(APIKeyHeader(name='X-Local-Client', auto_error=False))])
@@ -88,14 +85,10 @@ def start_liveness(session_id: str, request: Request):
             raise HTTPException(409,'Sesi sedang atau sudah diproses.')
         if session.document is None:
             raise HTTPException(422,'Baca KTP sebelum merekam liveness.')
+        sessions.clear_liveness(session)
         session.liveness_attempts+=1
         session.liveness_nonce=secrets.token_urlsafe(32)
         session.liveness_started=time.monotonic()
-        token = session.liveness_nonce
-        started = session.liveness_started
-        sessions.clear_liveness(session)
-        session.liveness_nonce = token
-        session.liveness_started = started
         session.stream_state = LiveCapture(session.challenges)
         result={**session.public(),'capture_nonce':session.liveness_nonce,'liveness_attempts':session.liveness_attempts, 'turn_direction': session.stream_state.gestures.turn_direction}
     repository.audit('Rekaman liveness dimulai',f'Percobaan rekaman {session.liveness_attempts}; tantangan server.',session.id)
@@ -117,11 +110,14 @@ async def live_frame(session_id: str, request: Request, capture_nonce: str = For
         session.liveness_processing = True
     try:
         decoded, digest = await image_upload(image, MAX_FRAME_BYTES)
-        problem = capture.accept(digest, seq, time.monotonic())
-        if problem:
-            raise HTTPException(422, problem)
+        def inspect_frame():
+            # Queue rejection must leave sequence/hash state untouched.
+            problem = capture.accept(digest, seq, time.monotonic())
+            if problem:
+                raise HTTPException(422, problem)
+            return verifier.inspect_liveness_frame(capture, decoded, digest, seq)
         try:
-            result = await request.app.state.inference_queue.run(verifier.inspect_liveness_frame, capture, decoded, digest, seq, session=session, flag="liveness_processing")
+            result = await request.app.state.inference_queue.run(inspect_frame, session=session, flag="liveness_processing")
         except CaptureError as exc:
             capture.pause_detection()
             result = capture.result({'ready': False, 'warnings': [{'code': 'face_missing', 'message': str(exc)}], 'face_box': None})
@@ -146,7 +142,7 @@ async def live_frame(session_id: str, request: Request, capture_nonce: str = For
             return live_result(result,actor(request))
     finally:
         with sessions.lock:
-            if not request.app.state.inference_queue.pending(session.id): session.liveness_processing = False
+            if session.revision == revision and not request.app.state.inference_queue.pending(session.id): session.liveness_processing = False
 
 
 @router.post('/sessions/{session_id}/liveness/pause')
@@ -209,7 +205,7 @@ async def check_liveness(session_id: str, request: Request, capture_nonce: str =
         return live_result(result,actor(request))
     finally:
         with sessions.lock:
-            if not request.app.state.inference_queue.pending(session.id): session.liveness_processing=False
+            if session.revision == revision and not request.app.state.inference_queue.pending(session.id): session.liveness_processing=False
 
 
 @router.get('/health')
@@ -521,7 +517,7 @@ async def verify(session_id: str, request: Request, nonce: str = Form(...),
             repository.save_result(result)
         session.last_result = result
         return applicant_result(result, actor(request))
-    except Exception:
+    except (Exception, asyncio.CancelledError) as exc:
         error_id = uuid.uuid4().hex[:12]
         logging.getLogger(__name__).error('Verification failure %s for session %s', error_id, session.id)
         reason = 'Pemeriksaan belum dapat diselesaikan atau disimpan. Coba jalankan model kembali; capture yang sudah lolos dipertahankan.'
@@ -529,14 +525,17 @@ async def verify(session_id: str, request: Request, nonce: str = Form(...),
         # The nonce stays consumed. A bounded /retry rotates it while retaining
         # the document and validated liveness proof, even if persistence failed.
         with sessions.lock:
-            session.last_result = {'status': 'technical', 'reason': reason, 'retry': retry}
-        try: request.app.state.workflow.technical(session)
-        except Exception: pass
+            if session.revision == revision:
+                session.last_result = {'status': 'technical', 'reason': reason, 'retry': retry}
+                try: request.app.state.workflow.technical(session)
+                except Exception: pass
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         return JSONResponse({'detail': reason, 'code': 'verification_unavailable',
                              'request_id': error_id, 'retry': retry}, status_code=503)
     finally:
         with sessions.lock:
-            if not request.app.state.inference_queue.pending(session.id): session.processing = False
+            if session.revision == revision and not request.app.state.inference_queue.pending(session.id): session.processing = False
 
 
 class Rules(BaseModel):

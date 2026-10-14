@@ -14,7 +14,8 @@ async function readApiResponse(response) {
   const detail = valid
     ? Array.isArray(body.detail)
       ? body.detail
-          .map((e) => `${e.loc?.slice(-1)[0] || "Input"}: ${e.msg}`)
+          .filter((e) => typeof e?.msg === "string")
+          .map((e) => `${(Array.isArray(e.loc) && e.loc.slice(-1)[0]) || "Input"}: ${e.msg}`)
           .join("; ")
       : typeof body.detail === "string"
         ? body.detail

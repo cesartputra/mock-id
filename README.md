@@ -1,5 +1,9 @@
 # mock-id — verifikasi identitas lokal
 
+## Perbaikan Ponytail pada alur asinkron
+
+Branch `refactor/ponytail-improvements` memperbaiki sesi terkunci setelah cancellation, frame liveness yang terpakai ketika antrean penuh, retry verifikasi yang dibatalkan, dan respons lama setelah navigasi/akun berubah. Error validasi yang rusak tetap menampilkan status HTTP. Helper lama disederhanakan tanpa dependency baru atau perubahan model/kalibrasi. Lihat [cakupan audit dan batas pengujian](docs/PONYTAIL-AUDIT.md).
+
 ## Pembaruan 3.6.1 Kamera wajib dan preview lebih besar
 
 Alur pemohon memakai **kamera otomatis** untuk OCR KTP, selfie/liveness, dan foto memegang KTP. Tombol pilihan gambar, file input, dan handler unggah galeri telah dihapus. Foto baru hanya masuk ke state UI setelah pemeriksaan otomatis lengkap; OCR pemohon memerlukan receipt server yang terikat gambar, sesi/versi, masa berlaku dan sekali pakai. Endpoint internal administrator untuk pengujian/integrasi tetap tersedia. Receipt menunjukkan pemeriksaan server, bukan attestation kamera perangkat atau jaminan seluruh injection terdeteksi.

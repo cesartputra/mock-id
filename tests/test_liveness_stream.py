@@ -96,6 +96,34 @@ def seed_proof(session):
     session.liveness_hashes = ['old-frame']
 
 
+def test_full_queue_does_not_consume_liveness_frame_order_or_hash(client, face_image, monkeypatch):
+    public, session = seed_session(client, face_image)
+    started = client.post(f'/api/sessions/{session.id}/liveness/start').json()
+    queue = client.app.state.inference_queue
+    capture = session.stream_state
+    assert queue.slots.acquire(blocking=False)
+    held = 1
+    try:
+        while queue.slots.acquire(blocking=False):
+            held += 1
+        route = f'/api/sessions/{session.id}/liveness/frame'
+        data = {'capture_nonce': started['capture_nonce'], 'seq': 0}
+        file = {'image': ('frame.jpg', encoded(face_image), 'image/jpeg')}
+        response = client.post(route, data=data, files=file)
+        assert response.status_code == 429, response.text
+        assert capture.sequence == 0 and not capture.hashes
+        assert not session.liveness_processing
+    finally:
+        for _ in range(held):
+            queue.slots.release()
+    def inspected(capture, *_args):
+        return capture.result({'ready': False, 'warnings': [{'code': 'face_missing', 'message': 'Protocol fixture'}]})
+    monkeypatch.setattr(client.app.state.verifier, 'inspect_liveness_frame', inspected)
+    response = client.post(route, data=data, files=file)
+    assert response.status_code == 200, response.text
+    assert capture.sequence == 1 and len(capture.hashes) == 1
+
+
 @pytest.mark.parametrize('stage', ['document', 'liveness', 'holding'])
 def test_retake_consumed_session_flushes_dependents_and_keeps_audit(client, face_image, stage):
     public, session = seed_session(client, face_image)

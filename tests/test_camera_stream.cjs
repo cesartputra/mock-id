@@ -402,7 +402,7 @@ test("white lightbox surrounds only face camera modes and is removed on camera c
     cameraAutoStopped:false, cameraCheckingPaused:false,
     cameraLightGate:new LuminanceCheck(),cameraKind:null,recording:false,stream:null,
     busy:false,captureResetting:false,flow:{consent:true},
-    AutoCaptureGate:class {}, prepareCapture:async () => {},render:() => {},icon:() => "",
+    AutoCaptureGate:class {}, prepareCapture:async () => true,render:() => {},icon:() => "",
     clearTimeout: id => cleared.push(id),
     navigator:{mediaDevices:{getUserMedia:async () => ({getTracks:() => [{stop:() => stopped++}]})}},
     monitorCameraLight:() => {}, monitorCamera:async () => {},
@@ -429,4 +429,24 @@ test("white lightbox surrounds only face camera modes and is removed on camera c
   }
   assert.equal(stopped, 3);
   assert.ok(cleared.includes(2));
+  context.prepareCapture=async()=>false;
+  await context.openCamera("holding");
+  assert.equal(context.stream,null);
+  assert.equal(modal.classList.contains("camera-dialog"),false);
+});
+
+test("temporary full queue retries the same frame sequence and retains only the accepted selfie", async () => {
+  const {context,events}=streamCamera({passed:true});
+  const api=context.api;
+  let blocked=false;
+  context.api=async(path,options)=>{
+    if(path.endsWith("/frame")&&!blocked) {
+      blocked=true;const error=new Error("Antrean penuh");error.status=429;throw error;
+    }
+    return api(path,options);
+  };
+  await context.recordChallenges();
+  assert.deepEqual(events.frames.map(f=>f.seq),[0,1,2,3]);
+  assert.equal(events.verifications,1);
+  assert.equal(context.flow.selfieBlob,events.sent[1]);
 });
